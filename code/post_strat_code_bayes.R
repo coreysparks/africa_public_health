@@ -82,20 +82,20 @@ vif(test)
 
 
 library(rstanarm)
-mod<- stan_glmer(hiv_pos ~ 1+(1|IPUM2016/agegrp)+(1|agegrp)+eth2+edusecplus+urban+chil_cut, weights = hpwt, family = binomial,
+moda<- stan_glmer(hiv_pos ~ 1+(1|IPUM2016/agegrp)+(1|agegrp)+eth2+edusecplus+urban+chil_cut, weights = hpwt, family = binomial,
             data = dhs2000m, chains =3, cores = 3)#,
             # control = glmerControl(optimizer = c("bobyqa", "Nelder_Mead"),
             #                        optCtrl=list(maxfun=2e5)))
 
 library(tidybayes)
-summary(mod, pars = c("beta", "Sigma[agegrp:(Intercept),(Intercept)]",
+summary(moda, pars = c("beta", "Sigma[agegrp:(Intercept),(Intercept)]",
                       "Sigma[IPUM2016:(Intercept),(Intercept)]",
                       "Sigma[agegrp:IPUM2016:(Intercept),(Intercept)]"
                       ),
         probs = c(0.025, 0.975),
         digits = 3)
-VarCorr(mod)
-summary(bayes_R2(mod, re.form = ~(1|IPUM2016/agegrp)+(1|agegrp)))
+VarCorr(moda)
+summary(bayes_R2(moda, re.form = ~(1|IPUM2016/agegrp)+(1|agegrp)))
 
 
 mod2<- stan_glmer(ipvany ~ 1+(1|IPUM2016/agegrp)+(1|agegrp)+eth2+edusecplus+urban+chil_cut, weights = dpwt, family = binomial, data = dhs2000m, chains =3, cores = 3)
@@ -112,11 +112,15 @@ summary(mod4,pars = c("beta"), digits = 3)
 summary(bayes_R2(mod4, re.form = ~(1|IPUM2016/agegrp)+(1|agegrp)))
 
 
-library(MuMIn)
-r.squaredGLMM(mod)
-r.squaredGLMM(mod2)
-r.squaredGLMM(mod3)
-r.squaredGLMM(mod4)
+summary(bayes_R2(moda))
+summary(bayes_R2(mod2))
+summary(bayes_R2(mod3))
+summary(bayes_R2(mod4))
+
+summary(loo_R2(moda))
+summary(loo_R2(mod2))
+summary(loo_R2(mod3))
+summary(loo_R2(mod4))
 
 #### do partner drink model ####
 
@@ -146,7 +150,7 @@ library(ipumsr)
         names(cens_fem_sex)<-c("IPUM2016", "agegrp","eth2", "edusecplus","chil_cut", "urban", "popn")
 
 #hiv       
-lp1<- posterior_epred(mod, newdata=cens_fem_sex, allow.new.levels = T,re.form = ~ (1|IPUM2016/agegrp)+(1|agegrp))
+lp1<- posterior_epred(moda, newdata=cens_fem_sex, allow.new.levels = T,re.form = ~ (1|IPUM2016/agegrp)+(1|agegrp))
 
 cens_fem_sex$predhiv <- colMeans(lp1)
 
@@ -176,15 +180,18 @@ lp4<-posterior_epred(mod4, newdata=cens_fem_sex, allow.new.levels = T,
         
         cens_fem_sex$ratecond <- (cens_fem_sex$predcond*cens_fem_sex$popn)
         
-out<-cens_fem_sex%>%
+out_a<-cens_fem_sex%>%
           group_by(IPUM2016)%>%
           summarise(ratehiv = sum(ratehiv)/sum(popn),
-                    rateipv =sum(rateipv)/sum(popn),
-                    ratecage = sum(ratecage)/sum(popn),
-                    ratecond =sum(ratecond)/sum(popn))
+                     rateipv =sum(rateipv)/sum(popn),
+                     ratecage = sum(ratecage)/sum(popn),
+                     ratecond =sum(ratecond)/sum(popn)
+                    )
+
+head(out_a)
         
         eth_adm2$IPUM2016<-as.numeric(eth_adm2$IPUM2016)
-        preddat<-left_join(eth_adm2, out, by =c( "IPUM2016" = "IPUM2016"))
+        preddat<-left_join(eth_adm2, out_a, by =c( "IPUM2016" = "IPUM2016"))
         
         mapview(preddat["ratehiv"])+
           mapview(preddat["rateipv"])+
@@ -245,8 +252,8 @@ pdm <- st_intersection(preddat,eth_adm1 )
 
 prop.table(table(pdm$NAME_1, pdm$cl), margin = 2)
 
-mapview(preddat, zcol ="cl")
+#mapview(preddat, zcol ="cl")
 
-sf::st_write(pdm,dsn =  "./data/poststrat_cl.shp")
+sf::st_write(pdm,dsn =  "./data/poststrat_cl.shp", delete_dsn =T)
 
-rm(list=ls()); gc()        
+#rm(list=ls()); gc()        

@@ -18,25 +18,25 @@ library(car)
 
 
 # individual recode
-saf<-read_dta("../data/ZA_2016_DHS_02252021_1635_24890/ZAIR71DT/ZAIR71FL.DTA")
+saf<-read_dta("./data/ZA_2016_DHS_02252021_1635_24890/ZAIR71DT/ZAIR71FL.DTA")
 saf<-zap_labels(saf)
 
 # mens recode
-sam<-read_dta("../data/ZA_2016_DHS_02252021_1635_24890/ZAMR71DT/ZAMR71FL.DTA")
+sam<-read_dta("./data/ZA_2016_DHS_02252021_1635_24890/ZAMR71DT/ZAMR71FL.DTA")
 sam<-zap_labels(sam)
 
 
 #women's health survey
-saf_wh<-read_dta("../data/ZA_2016_DHS_02252021_1635_24890/ZAAH71DT/ZAAHW71FL.DTA")
+saf_wh<-read_dta("./data/ZA_2016_DHS_02252021_1635_24890/ZAAH71DT/ZAAHW71FL.DTA")
 saf_wh<-zap_labels(saf_wh)
 
 
 # Men's health survey
-saf_mh<-read_dta("../data/ZA_2016_DHS_02252021_1635_24890/ZAAH71DT/ZAAHM71FL.DTA")
+saf_mh<-read_dta("./data/ZA_2016_DHS_02252021_1635_24890/ZAAH71DT/ZAAHM71FL.DTA")
 saf_mh<-zap_labels(saf_mh)
 
 ##HIV data
-safhiv<-read_dta("../data/ZA_2016_DHS_03182021_1437_24890/ZAAR71DT/ZAAR71FL.DTA")
+safhiv<-read_dta("./data/ZA_2016_DHS_03182021_1437_24890/ZAAR71DT/ZAAR71FL.DTA")
 safhiv<-zap_labels(safhiv)
 
 
@@ -61,24 +61,24 @@ sam2<-merge(sam2, safhiv, by.x=c("mv001", "mv002", "mv003"), by.y = c("hivclust"
 
 
 #polygons
-saf2_adm2<- st_read("../data/ZAF_adm/ZAF_adm2.shp")
+saf2_adm2<- st_read("./data/ZAF_adm/ZAF_adm2.shp")
 
 saf2_adm2<- st_transform(saf2_adm2, crs = 32734 )
 
-saf2_adm1<- st_read("../data/ZAF_adm/ZAF_adm1.shp")
+saf2_adm1<- st_read("./data/ZAF_adm/ZAF_adm1.shp")
 
 saf2_adm1<- st_transform(saf2_adm1, crs = 32734 )
 
-saf2_adm0<- st_read("../data/ZAF_adm/ZAF_adm0.shp")
+saf2_adm0<- st_read("./data/ZAF_adm/ZAF_adm0.shp")
 
 saf2_adm0<- st_transform(saf2_adm0, crs = 32734 )
 
 #psu locations
-saf2_dhs_psu<- st_read("../data/ZA_2016_DHS_02262021_2058_24890/ZAGE71FL/ZAGE71FL.shp")
+saf2_dhs_psu<- st_read("./data/ZA_2016_DHS_02262021_2058_24890/ZAGE71FL/ZAGE71FL.shp")
 
 saf2_dhs_psu<- st_transform(saf2_dhs_psu, crs =32734 )
 
-saf_regions<- st_read("../data/ZAF_adm/ZAF_adm1.shp")
+saf_regions<- st_read("./data/ZAF_adm/ZAF_adm1.shp")
 saf_regions <- saf_regions%>%
   filter(NAME_1!= "Western Cape (isolated islands)")
 
@@ -120,7 +120,7 @@ library(tmap); library(tmaptools)
 library(dplyr)
 library(tidyr)
 library(ggplot2)
-pstrat<- st_read("../poststrat_noisl.shp")
+pstrat<- st_read("./data/poststrat_cl_noisl.dbf.gpkg")
 ps1<-pstrat
 st_geometry(ps1)<-NULL
 # pstrat<-pstrat%>%
@@ -210,13 +210,13 @@ f4<-tm_basemap("Esri.WorldGrayCanvas")+
 
 f2_all<-tmap_arrange(f1, f2, f3, f4, ncol =2)
 
-tmap_save(f2_all, filename = "../images/figure2.png" )
+tmap_save(f2_all, filename = "./images/figure2.png" )
 
 
 # figure 3
 
 library(tmap); library(tmaptools)
-pstrat<- st_read("../poststrat_cl.shp")
+pstrat<- st_read("./data/poststrat_cl_noisl.dbf.gpkg")
 # pstrat<-pstrat%>%
 #    filter(MUNI2016!="1991011")
 
@@ -342,7 +342,7 @@ f4<-tm_basemap("Esri.WorldGrayCanvas")+
 
 f2_all<-tmap_arrange(f1, f2, f3, f4, ncol =2)
 
-tmap_save(f2_all, filename = "../images/figure3.png" )
+tmap_save(f2_all, filename = "./images/figure3.png" )
 
 
 ## figure 4
@@ -399,7 +399,7 @@ library(cluster)
 out2<-pam(ps1[, 12:15],k = 2,nstart = 10)
 out2$medoids
 
-pstrat$cl <-kmeans(ps1[, 12:15],
+ps1$cl <-kmeans(ps1[, 12:15],
                    centers = 2,
                    nstart = 3, 
                    iter.max = 150)$cluster
@@ -473,6 +473,6 @@ tm_basemap("Esri.WorldGrayCanvas")+
   tm_scale_bar(position=c("left", "top"))+
   tm_compass(position =c("left", "top"))
 
-tmap_save(f4, filename = "../images/figure4.png" )
+tmap_save(f4, filename = "./images/figure4.png" )
 
 

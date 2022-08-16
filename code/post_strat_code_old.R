@@ -71,53 +71,75 @@ dhs2000m$agegrp <- as.numeric(cut(dhs2000m$age,
 dhs2000m$urban <- ifelse(dhs2000m$rural ==1 , 0, 1)
 dhs2000m$chil_cut <- cut(dhs2000m$chilborn, breaks = c(0,1, 2,4, 12), include.lowest = T)
 
-dhs2000m$eth2<-ifelse(dhs2000m$eth%in%c("asian", "white"), "other", dhs2000m$eth)
+library(tableone)
+library(survey)
+options(survey.lonely.psu = "adjust")
+des1 <- svydesign(ids =~psu, strata=~strata, weights =~ pwt, data=dhs2000m[is.na(dhs2000m$psu)==F&is.na(dhs2000m$pwt)==F,], nest = T) 
+desv <- svydesign(ids =~psu, strata=~strata, weights =~ dpwt, data=dhs2000m[is.na(dhs2000m$psu)==F&is.na(dhs2000m$dpwt)==F,], nest=T) 
+desh <- svydesign(ids =~psu, strata=~strata, weights =~ hpwt, data=dhs2000m[is.na(dhs2000m$psu)==F&is.na(dhs2000m$hpwt)==F,], nest=T) 
 
-modf<-lmer(hiv_pos ~ 1+(1|IPUM2016/agegrp)+(1|agegrp)+eduprim+urban+chil_cut, weights = hpwt,  data = dhs2000m)
-mods<- glm(hiv_pos ~ 1+eduprim+urban+chil_cut, weights = hpwt, family = binomial, data = dhs2000m)
+svyby(~nocondom , ~factor(agegrp)+edusecplus+urban+chil_cut, des=des1, FUN=svymean, na.rm=T)
+library(gtsummary)
+library(srvyr)
+dhs2000m%>%
+  filter(complete.cases(pwt, psu, strata))%>%
+  as_survey_design( ids = psu, 
+                    strata =strata,
+                    weights =pwt, nest=T)%>%
+  select(nocondom, agegrp, edusecplus, urban, chil_cut)%>%
+  tbl_svysummary(by = c(nocondom), percent = "row",
+                 statistic = list(all_categorical() ~ "{n} ({p}%)"))%>%
+  add_p()
+
+dhs2000m%>%
+  filter(complete.cases(pwt, psu, strata))%>%
+  mutate(drink = ifelse(drink_freq!="0", 1, 0))%>%
+  as_survey_design( ids = psu, 
+                    strata =strata,
+                    weights =pwt, nest=T)%>%
+  select(drink, agegrp, edusecplus, urban, chil_cut)%>%
+  tbl_svysummary(by = drink, percent = "row",
+                 statistic = list(all_categorical() ~ "{n} ({p}%)"))%>%
+  add_p()
+
+
+dhs2000m%>%
+  filter(complete.cases(hpwt, psu, strata))%>%
+  as_survey_design( ids = psu, 
+                    strata =strata,
+                    weights =hpwt, nest=T)%>%
+  select(hiv_pos, agegrp, edusecplus, urban, chil_cut)%>%
+  tbl_svysummary(by = c(hiv_pos), percent = "row",
+                 statistic = list(all_categorical() ~ "{n} ({p}%)"))%>%
+  add_p()
+
+
+dhs2000m%>%
+  filter(complete.cases(dpwt, psu, strata))%>%
+  as_survey_design( ids = psu, 
+                    strata =strata,
+                    weights =dpwt, nest=T)%>%
+  select(ipvany, agegrp, edusecplus, urban, chil_cut)%>%
+  tbl_svysummary(by = c(ipvany), percent = "row",
+                 statistic = list(all_categorical() ~ "{n} ({p}%)"))%>%
+  add_p()
+
+
+
+
+
+mod<- glmer(hiv_pos ~ 1+(1|IPUM2016/agegrp)+(1|agegrp)+edusecplus+urban+chil_cut, weights = hpwt, family = binomial, data = dhs2000m, control = glmerControl(optimizer = c("bobyqa", "Nelder_Mead"), optCtrl=list(maxfun=2e5)))
 summary(mod)
 
-test<-glm(nocondom ~ agegrp+eth2+edusecplus+urban+chil_cut,family=binomial, data=dhs2000m)
-vif(test)
+mod2<- glmer(ipvany ~ 1+(1|IPUM2016/agegrp)+(1|agegrp)+edusecplus+urban+chil_cut, weights = dpwt, family = binomial, data = dhs2000m, control = glmerControl(optimizer = c("bobyqa", "Nelder_Mead"), optCtrl=list(maxfun=2e5)))
+summary(mod2)
 
+mod3<- glmer(I(drink_freq!="0") ~ 1+(1|IPUM2016/agegrp)+(1|agegrp)+edusecplus+urban+chil_cut, weights = pwt, family = binomial, data = dhs2000m, control = glmerControl(optimizer = c("bobyqa", "Nelder_Mead"), optCtrl=list(maxfun=2e5)))
+summary(mod3)
 
-library(rstanarm)
-mod<- stan_glmer(hiv_pos ~ 1+(1|IPUM2016/agegrp)+(1|agegrp)+eth2+edusecplus+urban+chil_cut, weights = hpwt, family = binomial,
-            data = dhs2000m, chains =3, cores = 3)#,
-            # control = glmerControl(optimizer = c("bobyqa", "Nelder_Mead"),
-            #                        optCtrl=list(maxfun=2e5)))
-
-library(tidybayes)
-summary(mod, pars = c("beta", "Sigma[agegrp:(Intercept),(Intercept)]",
-                      "Sigma[IPUM2016:(Intercept),(Intercept)]",
-                      "Sigma[agegrp:IPUM2016:(Intercept),(Intercept)]"
-                      ),
-        probs = c(0.025, 0.975),
-        digits = 3)
-VarCorr(mod)
-summary(bayes_R2(mod, re.form = ~(1|IPUM2016/agegrp)+(1|agegrp)))
-
-
-mod2<- stan_glmer(ipvany ~ 1+(1|IPUM2016/agegrp)+(1|agegrp)+eth2+edusecplus+urban+chil_cut, weights = dpwt, family = binomial, data = dhs2000m, chains =3, cores = 3)
-summary(mod2,pars = c("beta"), digits = 3)
-summary(bayes_R2(mod2, re.form = ~(1|IPUM2016/agegrp)+(1|agegrp)))
-
-
-mod3<-stan_glmer(I(drink_freq%in%c("3_1_4week",   "4_5+week")) ~ 1+(1|IPUM2016/agegrp)+(1|agegrp)+eth2+edusecplus+urban+chil_cut, weights = pwt, family = binomial, data = dhs2000m, chains =3, cores = 3)
-summary(mod3,pars = c("beta"), digits = 3)
-summary(bayes_R2(mod3, re.form = ~(1|IPUM2016/agegrp)+(1|agegrp)))
-
-mod4<- stan_glmer(nocondom ~ 1+(1|IPUM2016/agegrp)+(1|agegrp)+eth2+edusecplus+urban+chil_cut, weights = pwt, family = binomial, data = dhs2000m, chains =3, cores = 3)
-summary(mod4,pars = c("beta"), digits = 3)
-summary(bayes_R2(mod4, re.form = ~(1|IPUM2016/agegrp)+(1|agegrp)))
-
-
-library(MuMIn)
-r.squaredGLMM(mod)
-r.squaredGLMM(mod2)
-r.squaredGLMM(mod3)
-r.squaredGLMM(mod4)
-
+mod4<- glmer(nocondom ~ 1+(1|IPUM2016/agegrp)+(1|agegrp)+edusecplus+urban+chil_cut, weights = pwt, family = binomial, data = dhs2000m,control = glmerControl(optimizer = c("bobyqa", "Nelder_Mead"), optCtrl=list(maxfun=2e5)))
+summary(mod4)
+     
 #### do partner drink model ####
 
 library(ipumsr)
@@ -135,61 +157,45 @@ library(ipumsr)
                                     .$AGE2 ==17~7), 
                  edusecplus = ifelse(EDATTAIN%in%3:4, 1, 0), 
                  chil_cut = cut(CHBORN, breaks = c(0,1, 2,4, 12), include.lowest = T), 
-                 urban = ifelse (URBAN == 2, 1, 0), 
-                 eth = car::Recode(RACE, recodes =  "21='black_african';10 = 'other';54 = 'colored'; 40 = 'other'; else = NA"))%>%
+                 urban = ifelse (URBAN == 2, 1, 0))%>%
           filter(SEX == 2, AGE2 %in% c(4:17), is.na(chil_cut)==F )%>%
-          group_by(GEO3_ZA2016, agegrp,eth, edusecplus, chil_cut, urban)%>%
+          group_by(GEO3_ZA2016, agegrp, edusecplus, chil_cut, urban)%>%
           summarise(popn = sum(PERWT))
         
         head(cens_fem_sex)
         
-        names(cens_fem_sex)<-c("IPUM2016", "agegrp","eth2", "edusecplus","chil_cut", "urban", "popn")
+        names(cens_fem_sex)<-c("IPUM2016", "agegrp","edusecplus","chil_cut", "urban", "popn")
 
-#hiv       
-lp1<- posterior_epred(mod, newdata=cens_fem_sex, allow.new.levels = T,re.form = ~ (1|IPUM2016/agegrp)+(1|agegrp))
+        
 
-cens_fem_sex$predhiv <- colMeans(lp1)
+        cens_fem_sex$predhiv <- predict(mod, newdata=cens_fem_sex, type="response", allow.new.levels = T,re.form = ~ (1|IPUM2016/agegrp)+(1|agegrp))
+        
+        cens_fem_sex$ratehiv <- (cens_fem_sex$predhiv*cens_fem_sex$popn)
 
-cens_fem_sex$ratehiv <- (cens_fem_sex$predhiv*cens_fem_sex$popn)
-
-#ipv
-lp2<- posterior_epred(mod2, newdata=cens_fem_sex, allow.new.levels = T,
-                      re.form = ~ (1|IPUM2016/agegrp)+(1|agegrp))
-
-       cens_fem_sex$predipv <-colMeans(lp2)
+        cens_fem_sex$predipv <- predict(mod2, newdata=cens_fem_sex, type="response", allow.new.levels = T,re.form = ~ (1|IPUM2016/agegrp)+(1|agegrp))
         
         cens_fem_sex$rateipv <- (cens_fem_sex$predipv*cens_fem_sex$popn)
         
-#cage
-lp3 <-  posterior_epred(mod3, newdata=cens_fem_sex, allow.new.levels = T,
-                        re.form = ~ (1|IPUM2016/agegrp)+(1|agegrp))
-
-cens_fem_sex$predcage <-colMeans(lp3)
+        cens_fem_sex$predcage <- predict(mod3, newdata=cens_fem_sex, type="response", allow.new.levels = T,re.form = ~ (1|IPUM2016)+(1|agegrp))
         
         cens_fem_sex$ratecage <- (cens_fem_sex$predcage*cens_fem_sex$popn)
 
-#condom use
-lp4<-posterior_epred(mod4, newdata=cens_fem_sex, allow.new.levels = T,
-                     re.form = ~ (1|IPUM2016/agegrp)+(1|agegrp))
-
-        cens_fem_sex$predcond <-colMeans(lp4)
+        cens_fem_sex$predcond <- predict(mod4, newdata=cens_fem_sex, type="response", allow.new.levels = T,re.form = ~ (1|IPUM2016)+(1|agegrp))
         
         cens_fem_sex$ratecond <- (cens_fem_sex$predcond*cens_fem_sex$popn)
         
-out<-cens_fem_sex%>%
+        out<-cens_fem_sex%>%
           group_by(IPUM2016)%>%
           summarise(ratehiv = sum(ratehiv)/sum(popn),
-                    rateipv =sum(rateipv)/sum(popn),
-                    ratecage = sum(ratecage)/sum(popn),
-                    ratecond =sum(ratecond)/sum(popn))
-        
+                    #rateipv =sum(rateipv)/sum(popn),
+                    #ratecage = sum(ratecage)/sum(popn),
+                    #ratecond =sum(ratecond)/sum(popn)
+                    )
+ head(out)       
         eth_adm2$IPUM2016<-as.numeric(eth_adm2$IPUM2016)
         preddat<-left_join(eth_adm2, out, by =c( "IPUM2016" = "IPUM2016"))
         
-        mapview(preddat["ratehiv"])+
-          mapview(preddat["rateipv"])+
-          mapview(preddat["ratecage"])+
-          mapview(preddat["ratecond"])
+        mapview(preddat["ratehiv"])+mapview(preddat["rateipv"])+mapview(preddat["ratecage"])+mapview(preddat["ratecond"])
 
 pd2<-preddat; st_geometry(pd2)<-NULL   
 cor(pd2[ , c("ratehiv", "rateipv", "ratecage", "ratecond")])
@@ -231,7 +237,6 @@ R2s <- sapply(2:10,function(k){
 
 Df <- data.frame(K=2:10,
                  R2 = R2s)
-library(ggplot2)
 ggplot(Df)+
         geom_line(aes(x=K,y=R2s))+
         geom_point(aes(x=K,y=R2s),color="red")+
@@ -247,6 +252,6 @@ prop.table(table(pdm$NAME_1, pdm$cl), margin = 2)
 
 mapview(preddat, zcol ="cl")
 
-sf::st_write(pdm,dsn =  "./data/poststrat_cl.shp")
+sf::st_write(pdm, "poststrat_cl.shp")
 
 rm(list=ls()); gc()        
