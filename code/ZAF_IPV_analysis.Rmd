@@ -1,0 +1,1138 @@
+---
+title: "South Africa IPV"
+author: "Corey Sparks PhD"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+   html_document:
+    df_print: paged
+    fig_height: 7
+    fig_width: 7
+    toc: yes
+    toc_float: yes
+---
+
+### libraries
+
+```{r}
+library(dplyr)
+library(haven)
+library(survey)
+library(lme4)
+library(sf)
+library(questionr)
+library(splines)
+library(car)
+```
+
+# Notes
+Merge adult health data 
+
+do men and women separately
+
+include drinking variables from adult health survey module
+
+Maybe for HIV - history of testing
+
+
+
+### DHS data
+
+```{r}
+# individual recode
+saf<-read_dta("../data/ZA_2016_DHS_02252021_1635_24890/ZAIR71DT/ZAIR71FL.DTA")
+saf<-zap_labels(saf)
+
+# mens recode
+sam<-read_dta("../data/ZA_2016_DHS_02252021_1635_24890/ZAMR71DT/ZAMR71FL.DTA")
+sam<-zap_labels(sam)
+
+
+#women's health survey
+saf_wh<-read_dta("../data/ZA_2016_DHS_02252021_1635_24890/ZAAH71DT/ZAAHW71FL.DTA")
+saf_wh<-zap_labels(saf_wh)
+
+
+# Men's health survey
+saf_mh<-read_dta("../data/ZA_2016_DHS_02252021_1635_24890/ZAAH71DT/ZAAHM71FL.DTA")
+saf_mh<-zap_labels(saf_mh)
+
+##HIV data
+safhiv<-read_dta("../data/ZA_2016_DHS_03182021_1437_24890/ZAAR71DT/ZAAR71FL.DTA")
+safhiv<-zap_labels(safhiv)
+```
+
+## Merging data
+```{r}
+#womens recode to health survey
+saf2<-merge(saf, saf_wh, by=c("v001", "v002", "v003"), all.x = T)
+
+#womens merge to hiv
+saf2<-merge(saf2, safhiv, by.x=c("v001", "v002", "v003"), by.y = c("hivclust", "hivnumb" , "hivline"), all.x = T)
+
+#mens recode to health survey
+sam2<-merge(sam, saf_mh, by=c("mv001", "mv002", "mv003"), all.x = T)
+
+#mens merge to hiv
+sam2<-merge(sam2, safhiv, by.x=c("mv001", "mv002", "mv003"), by.y = c("hivclust", "hivnumb" , "hivline"), all.x = T)
+
+
+```
+
+### DHS Spatial data
+
+```{r}
+#polygons
+saf2_adm2<- st_read("../data/ZAF_adm/ZAF_adm2.shp")
+
+saf2_adm2<- st_transform(saf2_adm2, crs = 32734 )
+
+saf2_adm1<- st_read("../data/ZAF_adm/ZAF_adm1.shp")
+
+saf2_adm1<- st_transform(saf2_adm1, crs = 32734 )
+
+saf2_adm0<- st_read("../data/ZAF_adm/ZAF_adm0.shp")
+
+saf2_adm0<- st_transform(saf2_adm0, crs = 32734 )
+
+#psu locations
+saf2_dhs_psu<- st_read("../data/ZA_2016_DHS_02262021_2058_24890/ZAGE71FL/ZAGE71FL.shp")
+
+saf2_dhs_psu<- st_transform(saf2_dhs_psu, crs =32734 )
+
+saf_regions<- st_read("../data/ZAF_adm/ZAF_adm1.shp")
+saf_regions <- saf_regions%>%
+  filter(NAME_1!= "Western Cape (isolated islands)")
+
+saf_regions$dhs_reg <- car::Recode(saf_regions$ID_1, recodes = "1 = 2; 2 = 4; 3= 7; 4=5; 5=9; 6=8; 7=6;8=3; 10= 1")
+## africa violence data
+# saf2_viol<- st_read("../data/saf2viol.gpkg")
+# saf2_viol <- st_transform(saf2_viol, crs = 32734)
+# saf2_viol <- saf2_viol%>%
+#   filter(YEAR <=2016)
+
+## merge adm2 to violence data
+# saf2_m1<- st_intersection(saf2_viol, saf2_adm2)
+# saf2_viol_counts<- saf2_m1%>%
+#   group_by(EVENT_TYPE, ID_2, YEAR, .drop = FALSE)%>%
+#   tally()
+# 
+# st_geometry(saf2_viol_counts) <- NULL
+## Need to reshape counts to wide form
+# saf2_viol_counts <- 
+# head(saf2_viol_counts)
+
+
+## merge psu and adm2
+saf2_sp_join <- st_intersection(saf2_adm2, saf2_dhs_psu)
+
+#saf2_m2 <- tigris::geo_join(saf2_sp_join, saf2_viol_counts, by_sp = "ID_2", by_df = "ID_2",how="inner")
+
+# mapview::mapview(saf2_adm2, col.regions="grey") +
+#   mapview::mapview(saf2_dhs_psu, col.regions="black")
+#  mapview::mapview(saf2_viol, zcol = "EVENT_TYPE", cex=3, alpha = 1)
+
+
+```
+
+## make figure 1
+
+```{r}
+library(tmap); library(tmaptools)
+
+saf2_adm2<-saf2_adm2%>%
+  filter(ID_2!=313)
+tmap_mode("plot")
+f1<-tm_basemap("Esri.WorldGrayCanvas")+ 
+ tm_shape(saf2_adm1, is.master = T)+
+  tm_borders(col ="black",lwd=2, lty=1)+
+  tm_text("NAME_1", bg.color="grey20", bg.alpha = .25,  auto.placement = 1,scale=1, root=4)+
+tm_shape(saf2_adm2, is.master = T, title.col="Admin")+
+  tm_borders(col = "grey20", alpha = .4, lty = 3 )+
+  tm_shape(saf2_dhs_psu)+
+  tm_dots(size =.05)+
+  tm_format(format = "World")+
+  #  tm_legend(legend.show=T)+
+    
+  tm_scale_bar(position=c("left", "top"))+
+  tm_compass(position =c("left", "top"))
+f1
+tmap_save(f1, filename = "../images/figure1.png" )
+```
+
+
+# figure 2
+```{r, eval=FALSE}
+library(tmap); library(tmaptools)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+pstrat<- st_read("../poststrat_noisl.shp")
+ps1<-pstrat
+st_geometry(ps1)<-NULL
+# pstrat<-pstrat%>%
+#    filter(MUNI2016!="1991011")
+
+
+ps1%>%
+  group_by(NAME_1)%>%
+  summarise(phiv = mean(ratehiv), pipv=mean(rateipv), pdrink = mean(ratecage), psex= mean(ratecond))%>%
+  pivot_longer(cols = c(phiv, pipv, pdrink, psex))%>%
+  ggplot()+
+  geom_bar(aes(x = name, fill=NAME_1, y = value),
+           stat="identity",
+           position = "dodge")+
+  scale_fill_brewer(palette = "Paired")+
+  theme_bw()
+
+# ps1%>%
+#   group_by(NAME_1)%>%
+#   summarise(phiv = mean(rank(ratehiv)), pipv=mean(rank(rateipv)), pdrink = mean(rank(ratecage)), psex= mean(rank(ratecond)))%>%
+#   pivot_longer(cols = c(phiv, pipv, pdrink, psex))%>%
+#   ggplot()+
+#   geom_bar(aes(x = name, fill=NAME_1, y = value),stat="identity", position = "dodge")
+```
+
+```{r, eval=FALSE}
+tmap_mode("plot")
+f1<-tm_basemap("Esri.WorldGrayCanvas")+ 
+tm_shape(pstrat, is.master = T)+
+  #tm_borders(col = "grey20", alpha = .4, lty = 3 )+
+  tm_polygons("ratehiv", title="% with HIV", palette="Blues", style="jenks", n=5,legend.hist=T )+
+ # tm_shape(saf2_dhs_psu)+
+ # tm_dots(size =.05)+
+  tm_format(format = "World", legend.outside=T)+
+   tm_shape(saf2_adm1)+
+  tm_borders(col ="black",lwd=2, lty=1)
+ # tm_text("NAME_1", bg.color="grey20", bg.alpha = .25,  auto.placement = 1,scale=1, root=4)+
+  #  tm_legend(legend.show=T)+
+    
+ # tm_scale_bar(position=c("left", "top"))+
+ # tm_compass(position =c("left", "top"))
+
+f2<-tm_basemap("Esri.WorldGrayCanvas")+ 
+tm_shape(pstrat, is.master = T)+
+  #tm_borders(col = "grey20", alpha = .4, lty = 3 )+
+  tm_polygons("rateipv", title="% with IPV", palette="Blues", style="jenks", n=5,legend.hist=T )+
+ # tm_shape(saf2_dhs_psu)+
+ # tm_dots(size =.05)+
+  tm_format(format = "World", legend.outside=T)+
+   tm_shape(saf2_adm1)+
+  tm_borders(col ="black",lwd=2, lty=1)
+ # tm_text("NAME_1", bg.color="grey20", bg.alpha = .25,  auto.placement = 1,scale=1, root=4)+
+  #  tm_legend(legend.show=T)+
+    
+  #tm_scale_bar(position=c("left", "top"))+
+  #tm_compass(position =c("left", "top"))
+
+f3<-tm_basemap("Esri.WorldGrayCanvas")+ 
+tm_shape(pstrat, is.master = T)+
+  #tm_borders(col = "grey20", alpha = .4, lty = 3 )+
+  tm_polygons("ratecage", title="% with Alcohol Use", palette="Blues", style="jenks", n=5,legend.hist=T )+
+ # tm_shape(saf2_dhs_psu)+
+ # tm_dots(size =.05)+
+  tm_format(format = "World", legend.outside=T)+
+   tm_shape(saf2_adm1)+
+  tm_borders(col ="black",lwd=2, lty=1)
+ # tm_text("NAME_1", bg.color="grey20", bg.alpha = .25,  auto.placement = 1,scale=1, root=4)+
+  #  tm_legend(legend.show=T)+
+    
+#  tm_scale_bar(position=c("left", "top"))+
+ # tm_compass(position =c("left", "top"))
+
+f4<-tm_basemap("Esri.WorldGrayCanvas")+ 
+tm_shape(pstrat, is.master = T)+
+  #tm_borders(col = "grey20", alpha = .4, lty = 3 )+
+  tm_polygons("ratecond", title="% with Unprotected Sex", palette="Blues", style="jenks", n=5,legend.hist=T )+
+ # tm_shape(saf2_dhs_psu)+
+ # tm_dots(size =.05)+
+  tm_format(format = "World", legend.outside=T)+
+   tm_shape(saf2_adm1)+
+  tm_borders(col ="black",lwd=2, lty=1)+
+ # tm_text("NAME_1", bg.color="grey20", bg.alpha = .25,  auto.placement = 1,scale=1, root=4)+
+  #  tm_legend(legend.show=T)+
+    
+  tm_scale_bar(position=c("left", "top"))+
+  tm_compass(position =c("left", "top"))
+
+f2_all<-tmap_arrange(f1, f2, f3, f4, ncol =2)
+
+tmap_save(f2_all, filename = "../images/figure2.png" )
+```
+
+# figure 3
+```{r, eval=FALSE}
+library(tmap); library(tmaptools)
+pstrat<- st_read("../poststrat_cl.shp")
+# pstrat<-pstrat%>%
+#    filter(MUNI2016!="1991011")
+
+pstrat <- pstrat%>%
+  filter(NAME_1 != "Western Cape (isolated islands)")
+ps1<-pstrat
+st_geometry(ps1)<-NULL
+
+library(spdep)
+nbs <- poly2nb(pstrat, queen = T)
+#nbs<-knn2nb(nbs)
+wts<-nb2listw(nbs, style="B")
+
+
+
+pstrat$hivg <- localG(pstrat$ratehiv, listw=wts)
+pstrat$drinkg <- localG(pstrat$ratecage, listw=wts)
+pstrat$ipvg <- localG(pstrat$rateipv, listw=wts)
+pstrat$condg <- localG(pstrat$ratecond, listw=wts)
+
+table(pstrat$hivg>3, pstrat$NAME_1)
+table(pstrat$drinkg>3, pstrat$NAME_1)
+table(pstrat$ipvg>3, pstrat$NAME_1)
+table(pstrat$condg>3, pstrat$NAME_1)
+
+table(pstrat$hivg< -3, pstrat$NAME_1)
+table(pstrat$drinkg< -3, pstrat$NAME_1)
+table(pstrat$ipvg< -3, pstrat$NAME_1)
+table(pstrat$condg< -3, pstrat$NAME_1)
+
+
+hivcl <- localmoran(pstrat$ratehiv, listw=wts)
+hivcl_l <- as.character(attr(hivcl, "quadr")$mean)
+pstrat$hivcl <- ifelse(hivcl[, 5]<.05,hivcl_l, NA)  
+levels(pstrat$hivcl) <- levels(attr(hivcl, "quadr")$mean)
+
+drinkcl <- localmoran(pstrat$ratecage, listw=wts)
+drinkccl_l <- as.character(attr(drinkcl, "quadr")$mean)
+pstrat$drinkccl <- ifelse(drinkcl[, 5]<.05,drinkccl_l, NA)  
+levels(pstrat$drinkccl) <- levels(attr(hivcl, "quadr")$mean)
+
+ipvcl <- localmoran(pstrat$rateipv, listw=wts)
+ipvcl_l <- as.character(attr(ipvcl, "quadr")$mean)
+pstrat$ipvcl <- ifelse(ipvcl[, 5]<.05,ipvcl_l, NA)  
+levels(pstrat$ipvcl) <- levels(attr(hivcl, "quadr")$mean)
+
+condcl <- localmoran(pstrat$ratecond, listw=wts)
+condcl_l <- as.character(attr(condcl, "quadr")$mean)
+pstrat$condcl <- ifelse(condcl[, 5]<.05,condcl_l, NA)  
+levels(pstrat$condcl) <- levels(attr(hivcl, "quadr")$mean)
+
+
+# pstrat$drinkcl <-  attr(localmoran(pstrat$ratecage, listw=wts), "quadr")$mean
+# pstrat$ipvcl <-  attr(localmoran(pstrat$rateipv, listw=wts), "quadr")$mean
+# pstrat$condcl <-  attr(localmoran(pstrat$ratecond, listw=wts), "quadr")$mean
+#
+
+MyPalette1 <- c("#CA0020", "#F4A582",  "#0571B0")
+MyPalette2 <-c("#CA0020", "#F4A582", "#92C5DE", "#0571B0")
+
+tmap_mode("plot")
+f1<-tm_basemap("Esri.WorldGrayCanvas")+ 
+tm_shape(pstrat, is.master = T)+
+  #tm_borders(col = "grey20", alpha = .4, lty = 3 )+
+  tm_polygons("hivg", title="HIV Local Cluster")+
+ # tm_shape(saf2_dhs_psu)+
+ # tm_dots(size =.05)+
+  tm_format(format = "World", legend.outside=T)+
+   tm_shape(saf2_adm1)+
+  tm_borders(col ="black",lwd=2, lty=1)
+
+f1
+ # tm_text("NAME_1", bg.color="grey20", bg.alpha = .25,  auto.placement = 1,scale=1, root=4)+
+  #  tm_legend(legend.show=T)+
+    
+ # tm_scale_bar(position=c("left", "top"))+
+ # tm_compass(position =c("left", "top"))
+
+f2<-tm_basemap("Esri.WorldGrayCanvas")+ 
+tm_shape(pstrat, is.master = T)+
+  #tm_borders(col = "grey20", alpha = .4, lty = 3 )+
+  tm_polygons("ipvg", title="Local IPV Cluster" )+
+ # tm_shape(saf2_dhs_psu)+
+ # tm_dots(size =.05)+
+  tm_format(format = "World", legend.outside=T)+
+   tm_shape(saf2_adm1)+
+  tm_borders(col ="black",lwd=2, lty=1)
+ # tm_text("NAME_1", bg.color="grey20", bg.alpha = .25,  auto.placement = 1,scale=1, root=4)+
+  #  tm_legend(legend.show=T)+
+    
+  #tm_scale_bar(position=c("left", "top"))+
+  #tm_compass(position =c("left", "top"))
+
+f3<-tm_basemap("Esri.WorldGrayCanvas")+ 
+tm_shape(pstrat, is.master = T)+
+  #tm_borders(col = "grey20", alpha = .4, lty = 3 )+
+  tm_polygons("drinkg", title="Local Alcohol\nUse Cluster")+
+ # tm_shape(saf2_dhs_psu)+
+ # tm_dots(size =.05)+
+  tm_format(format = "World", legend.outside=T)+
+   tm_shape(saf2_adm1)+
+  tm_borders(col ="black",lwd=2, lty=1)
+ # tm_text("NAME_1", bg.color="grey20", bg.alpha = .25,  auto.placement = 1,scale=1, root=4)+
+  #  tm_legend(legend.show=T)+
+    
+#  tm_scale_bar(position=c("left", "top"))+
+ # tm_compass(position =c("left", "top"))
+
+f4<-tm_basemap("Esri.WorldGrayCanvas")+ 
+tm_shape(pstrat, is.master = T)+
+  #tm_borders(col = "grey20", alpha = .4, lty = 3 )+
+  tm_polygons("condg", title="Local Unprotected\nSex Cluster")+
+ # tm_shape(saf2_dhs_psu)+
+ # tm_dots(size =.05)+
+  tm_format(format = "World", legend.outside=T)+
+   tm_shape(saf2_adm1)+
+  tm_borders(col ="black",lwd=2, lty=1)+
+ # tm_text("NAME_1", bg.color="grey20", bg.alpha = .25,  auto.placement = 1,scale=1, root=4)+
+  #  tm_legend(legend.show=T)+
+    
+  tm_scale_bar(position=c("left", "top"))+
+  tm_compass(position =c("left", "top"))
+
+f2_all<-tmap_arrange(f1, f2, f3, f4, ncol =2)
+
+tmap_save(f2_all, filename = "../images/figure3.png" )
+```
+
+## figure 4
+
+```{r, eval=FALSE}
+pstrat$hivg <- localG_perm(pstrat$ratehiv, listw=wts, nsim = 999)
+pstrat$drinkg <- localG_perm(pstrat$ratecage, listw=wts, nsim = 999)
+pstrat$ipvg <- localG_perm(pstrat$rateipv, listw=wts, nsim = 999)
+pstrat$condg <- localG_perm(pstrat$ratecond, listw=wts, nsim = 999)
+
+
+#localG_perm(pstrat$ratehiv, listw=wts, nsim = 999)
+
+pstrat$hivg_s<-ifelse(pstrat$hivg >3.2, 1, 0)
+pstrat$drinkg_s<-ifelse(pstrat$drinkg >3.2, 1, 0)
+pstrat$ipvg_s<-ifelse(pstrat$ipvg >3.2, 1, 0)
+pstrat$condg_s<-ifelse(pstrat$condg >3.2, 1, 0)
+
+pstrat$sum_s <- pstrat$hivg_s + pstrat$drinkg_s + pstrat$ipvg_s + pstrat$condg_s
+
+
+ps1<-pstrat
+st_geometry(ps1)<-NULL
+ss<-NA
+
+for(i in 1:10){
+        ss[i]<- kmeans(ps1[, 12:15], centers = i, nstart = 3)$withinss
+}
+
+plot(ss, type= "l")
+
+
+R2s <- sapply(2:10,function(k){
+        Clust <- kmeans(ps1[, 12:15],centers=k,iter.max = 150)
+        R2 <- Clust$betweenss / Clust$totss
+        return(R2)
+})
+
+Df <- data.frame(K=2:10,
+                 R2 = R2s)
+library(ggplot2)
+ggplot(Df)+
+        geom_line(aes(x=K,y=R2s))+
+        geom_point(aes(x=K,y=R2s),color="red")+
+        xlab("Number of groups")+
+        ylab("R2 of classification")
+
+out<- kmeans(ps1[, 12:15],
+             centers = 2,
+             nstart = 10,
+             iter.max = 150)
+out$centers
+
+library(cluster)
+out2<-pam(ps1[, 12:15],k = 2,nstart = 10)
+out2$medoids
+
+pstrat$cl <-kmeans(ps1[, 12:15],
+                   centers = 2,
+                   nstart = 3, 
+                   iter.max = 150)$cluster
+
+pstrat$pam<-out2$clustering
+
+ps1<-pstrat
+st_geometry(ps1)<-NULL
+
+ps1%>%
+  group_by(cl)%>%
+  summarise(phiv = mean(ratehiv), pipv=mean(rateipv), pdrink = mean(ratecage), psex= mean(ratecond))%>%
+  pivot_longer(cols = c(phiv, pipv, pdrink, psex))%>%
+  ggplot()+
+  geom_bar(aes(x = name, fill=factor(cl), y = value),
+           stat="identity",
+           position = "dodge")+
+  scale_fill_brewer(palette = "Paired")+
+  theme_bw()
+
+ps1%>%
+  group_by(pam)%>%
+  summarise(phiv = mean(ratehiv), pipv=mean(rateipv), pdrink = mean(ratecage), psex= mean(ratecond))%>%
+  pivot_longer(cols = c(phiv, pipv, pdrink, psex))%>%
+  ggplot()+
+  geom_bar(aes(x = name, fill=factor(pam), y = value),
+           stat="identity",
+           position = "dodge")+
+  scale_fill_brewer(palette = "Paired")+
+  theme_bw()
+
+# pstrat$cl_lab <- ps1$clus <- ifelse(ps1$hivg==1 & ps1$drinkg==1 & ps1$ipvg ==1 & ps1$condg==1, 
+#                    "All high",
+#                    ifelse(ps1$hivg==1 & ps1$drinkg==1 & ps1$ipvg ==1, "HIV, Dr, IPV", 
+#                           ifelse(ps1$hivg==1 & ps1$drinkg==1 , "HIV & Dr",
+#                                  ifelse(ps1$drinkg==1 & ps1$ipvg ==1 & ps1$condg==1, "dr, ipv, cond", 
+#                                         ifelse(ps1$drinkg==1 & ps1$ipvg ==1 , "dr & ipv", 
+#                                                ifelse(ps1$ipvg ==1 & ps1$condg==1, "ipv&cond", "none"))))))
+#   
+  
+  # ifelse(pstrat$cl ==1, "No Indicators", 
+  #                      ifelse(pstrat$cl ==2, "All indicators","Drinking, IPV, Risky Sex"))
+MyPalette2 <-c("#CA0020", "#F4A582", "#92C5DE", "grey80")
+
+
+
+tmap_mode("plot")
+f4<-tm_basemap("Esri.WorldGrayCanvas")+ 
+tm_shape(pstrat, is.master = T)+
+  #tm_borders(col = "grey20", alpha = .4, lty = 3 )+
+  tm_polygons("cl", title="Multivariate Cluster")+
+ # tm_shape(saf2_dhs_psu)+
+ # tm_dots(size =.05)+
+  tm_format(format = "World", legend.outside=T)+
+   tm_shape(saf2_adm1)+
+  tm_borders(col ="black",lwd=2, lty=1)+
+    tm_scale_bar(position=c("left", "top"))+
+  tm_compass(position =c("left", "top"))
+
+f4
+
+tm_basemap("Esri.WorldGrayCanvas")+ 
+tm_shape(pstrat, is.master = T)+
+  #tm_borders(col = "grey20", alpha = .4, lty = 3 )+
+  tm_polygons("pam", title="Multivariate Cluster")+
+ # tm_shape(saf2_dhs_psu)+
+ # tm_dots(size =.05)+
+  tm_format(format = "World", legend.outside=T)+
+   tm_shape(saf2_adm1)+
+  tm_borders(col ="black",lwd=2, lty=1)+
+    tm_scale_bar(position=c("left", "top"))+
+  tm_compass(position =c("left", "top"))
+
+tmap_save(f4, filename = "../images/figure4.png" )
+```
+
+
+## spatial arrangement of PSUs
+
+```{r}
+
+library(spdep)
+saf2_dhs_psu$struct <- 1:dim(saf2_dhs_psu)[1]
+saf_knn<-knearneigh(st_coordinates(saf2_dhs_psu), k = 7)
+saf_knnnb<-knn2nb(saf_knn, row.names = saf2_dhs_psu$struct, sym = T)
+mat <- nb2mat(saf_knnnb, style="B",zero.policy=TRUE)
+colnames(mat) <- rownames(mat) 
+mat <- as.matrix(mat[1:dim(mat)[1], 1:dim(mat)[1]])
+
+saflw<-nb2listw(saf_knnnb, style = "B")
+plot(as_Spatial(saf2_dhs_psu))
+plot(saflw,coords= coordinates(as_Spatial(saf2_dhs_psu)), add=T, col=2)
+```
+
+### Merge spatial data on PSUs to survey
+
+```{r}
+saf2<-merge(saf2, saf2_dhs_psu, by.x="v021.x", by.y="DHSCLUST")
+sam2<-merge(sam2, saf2_dhs_psu, by.x="mv021.x", by.y="DHSCLUST")
+```
+
+
+# Women's analysis
+### IPV recodes
+
+```{r}
+saf2$ipv.viol<-ifelse(saf2$d105a==1|saf2$d105a==2|  saf2$d105d==1|saf2$d105d==2| saf2$d105e==1|saf2$d105e==2| saf2$d105f==1|saf2$d105f==2,1,0)
+table(saf2$ipv.viol)
+
+saf2$ipv.sex<-ifelse(saf2$d105h==1|saf2$d105h==2|saf2$d105i==1|saf2$d105i==2|saf2$d105k==1|saf2$d105k==2,1,0)
+table(saf2$ipv.sex)
+
+# saf2$force_sex <- ifelse(saf2$d125==1,1,ifelse(saf2$d125==9, NA, 0))
+# table(saf2$force_sex)
+
+
+saf2$ipv.emot<-ifelse(saf2$d104==1,1,0)
+table(saf2$ipv.emot)
+table(saf2$drin)
+```
+
+## HIV recodes
+
+```{r}
+saf2$hiv_test_ever <- Recode(saf2$v781, recodes = "1=1;0=0; 9=NA")
+saf2$hiv_test_yr <- Recode(saf2$v826a, recodes = "0:12=1; 13:95=0")
+
+table(saf2$hiv_test_ever)
+table(saf2$hiv_test_yr)
+
+saf2$hiv_pos <- Recode(saf2$hiv03, recodes = "1:3=1;0=0;4:9=NA")
+table(saf2$hiv_pos)
+
+```
+
+## Alcohol and drugs
+
+```{r}
+saf2$partner_drug <- Recode(saf2$s1512a, recodes = "0=0;1=1;8=NA")
+
+saf2$partner_drinks<- Recode(saf2$d113, recodes = "0=0;1=1;else=NA")
+
+saf2$partner_drunk<- Recode(saf2$d114, recodes = "0=0;1:2=1; else = NA")
+
+saf2$ever_drink<-Recode(saf2$s1224, recodes = "0=0;1=1")
+saf2$drink12<-Recode(saf2$s1225, recodes = "0=0;1=1")
+saf2$drink_freq<-Recode(saf2$s1226, recodes = "1='4_5+week';2='3_1_4week';3:4='3_1_3month'; else = 0", as.factor=T)
+saf2$drink_freq <- relevel(saf2$drink_freq, ref = '0')
+table(saf2$drink_freq)
+table(saf2$s1232)
+saf2$cage<-ifelse(is.na(saf2$s1228)==T, 0,saf2$s1228)+
+  ifelse(is.na(saf2$s1229)==T, 0,saf2$s1229)+
+ifelse(is.na(saf2$s1230)==T, 0,saf2$s1230)+
+ifelse(is.na(saf2$s1231)==T, 0,saf2$s1231)
+
+saf2$cage_b<-ifelse(saf2$cage>=2, 1, 0)
+```
+
+### Other recodes
+
+add risky sex behavior
+
+partners in last year use of condoms + consistency use of alcohol during sex
+
+```{r}
+saf2$age<-saf2$v012.x
+saf2$age1520<-ifelse(saf2$v012.x>10&saf2$v012.x<20,1,0)
+saf2$age3040<-ifelse(saf2$v012.x>=30&saf2$v012.x<40,1,0)
+saf2$age4050<-ifelse(saf2$v012.x>=40&saf2$v012.x<50,1,0)
+saf2$rural<-ifelse(saf2$v025.x==2,1,0)
+saf2$eduprim<-ifelse(saf2$v106.x==1,1,0)
+saf2$edusecplus<-ifelse(saf2$v106.x!=9&saf2$v106.x>=2,1,0)
+saf2$hhsize<-saf2$v136.x
+saf2$chilathome<-saf2$v202+saf2$v203
+saf2$chilborn<-saf2$v201
+saf2$preg<-ifelse(saf2$v213==1,1,0)
+saf2$currentbirthintyrs<-saf2$v222/12
+saf2$currcontramod<-ifelse(saf2$v313==3,1,0)
+saf2$datint<-((saf2$v008.x-1)/12)+1900
+saf2$datmarr<-((saf2$v509-1)/12)+1900
+saf2$marrdur<-saf2$datint-saf2$datmarr
+saf2$wantanotherchild<-ifelse(saf2$v602!=9&saf2$v602==1,1,0)
+saf2$unfecund<-ifelse(saf2$v602==5,1,0)
+saf2$childwn2yrs<-ifelse(saf2$v605==1,1,0)
+saf2$sterilized<-ifelse(saf2$v602==4,1,0)
+saf2$intedgtpres<-ifelse(saf2$v613>(saf2$v201),1,0)
+saf2$partneredhigher<-ifelse(saf2$v106.x<8&saf2$v701.x<8&saf2$v701.x>saf2$v106.x,1,0)
+saf2$partneredlower<-ifelse(saf2$v106.x<8&saf2$v701.x<8&saf2$v701.x<saf2$v106.x,1,0)
+saf2$partnerhighstatjob<-ifelse(saf2$v705.x==1|saf2$v705.x==2|saf2$v705.x==3,1,0)
+saf2$partnerjobclass<-recode(saf2$v705.x, recodes="0=0; 1:3=3; 4:5=2; 6:9=1; 96:99=NA")
+saf2$respjobclass<-recode(saf2$v717.x, recodes="0=0; 1:3=3; 4:5=2; 6:9=1; 96:99=NA")
+saf2$partneragjob<-ifelse(saf2$v705.x==4|saf2$v705.x==5,1,0)
+saf2$partnerage<-saf2$v730
+saf2$respage<-saf2$v012.x
+saf2$partolder<-ifelse(saf2$partnerage>saf2$respage+5,1,0)
+saf2$partyong<-ifelse(saf2$partnerage<saf2$respage-5,1,0)
+saf2$partnerhigherjob<-ifelse(saf2$partnerjobclass>saf2$respjobclass,1,0)
+#saf2$partnerwork<-ifelse(saf2$v705!=0,1,ifelse(saf2$v705 %in% 98:99==f,0,NA))
+saf2$respwork<-ifelse(saf2$v716.x!=0,1,ifelse(saf2$v716.x %in% 98:99==F,0,NA))
+saf2$partneredu<-ifelse(saf2$v701.x>=8, NA, saf2$v701.x)
+
+## risky sex
+saf2$numpartners = car::Recode(saf2$v766b, recodes="0=0; 1=1;2:94=2;else=NA")
+saf2$nocondom = ifelse(saf2$v833a==0,1,0)
+```
+
+### survey design
+
+```{r}
+saf2$hpwt<- saf2$hiv05/1000000
+saf2$pwt<- saf2$v005.x/1000000
+saf2$dpwt<- saf2$d005/1000000
+saf2$currunion <- ifelse(saf2$v502.x==2, 1,0)
+saf2$eth <- car::Recode(saf2$v131.x, recodes =  " 1='black_african';2 = 'white'; 3 = 'colored'; 4 = 'asian'; else = NA")
+
+saf2_sub <- saf2%>%
+  mutate(psu = v012.x, strata=v022.x, region=v024.x )%>%
+  #filter(complete.cases( pwt, eduprim, edusecplus, partner_drinks,drink_freq,numpartners))%>%
+  dplyr::select(v001, v024.x,age,currunion,eth, rural, eduprim, edusecplus, hhsize, chilathome, chilborn, preg, currentbirthintyrs, currcontramod, datint, datmarr, marrdur, wantanotherchild, unfecund, childwn2yrs, sterilized, intedgtpres, partner_drug, partner_drinks, partner_drunk, partneredhigher, partneredlower, partnerhighstatjob, partnerhigherjob, partneredu, partneragjob, partnerage, partnerjobclass, respjobclass, respage, respwork, partolder, partyong, hiv_pos, hiv_test_yr, hiv_test_ever, pwt, psu, strata, region, age1520, age3040, age4050, ipv.viol, ipv.sex, ipv.emot, numpartners, nocondom, struct, hpwt, dpwt, ever_drink, drink12, drink_freq, cage, cage_b)
+
+saveRDS(saf2_sub, file = "../data/saf_women.rds")
+
+```
+
+```{r,eval=FALSE, results='hide', message=FALSE}
+#test<-mice::ic(saf2_sub)
+
+saf2_sub<-saf2_sub%>%
+  select(-c(hpwt, dpwt,hiv_pos,ipv.viol, ipv.sex, ipv.emot , nocondom, partolder, partyong,currentbirthintyrs, datmarr, marrdur, partnerhigherjob, partneredu, partneragjob, partnerage, partnerjobclass, partneredhigher, partneredlower, partnerhighstatjob, partner_drug, partner_drinks, hiv_test_ever))
+
+
+imps<-mice::mice(m = 10, data =saf2_sub)
+saf2_sub_imp<-mice::complete(imps)
+```
+
+
+```{r}
+
+des_p <- svydesign(ids = ~ psu, strata = ~ strata, weights = ~ pwt, data=saf2_sub, nest=T)
+des_d <- svydesign(ids = ~ psu, strata = ~ strata, weights = ~ dpwt, data=saf2_sub[is.na(saf2_sub$dpwt)==F,], nest=T)
+des_h <- svydesign(ids = ~ psu, strata = ~ strata, weights = ~hpwt, data=saf2_sub[is.na(saf2_sub$hpwt)==F,], nest=T)
+```
+
+### survey estimates regional level indicators
+
+You can turn on or off layers in the map
+
+```{r, eval=FALSE}
+
+reg_sums<-saf2_sub%>%
+  group_by(v024.x)%>%
+  summarise(ipvviol = wtd.mean(ipv.viol, weights = pwt),
+            ipvemot = wtd.mean(ipv.emot, weights = pwt),
+            ipvsex = wtd.mean(ipv.sex, weights = pwt),
+            partnerdrink = wtd.mean(partner_drinks, weights = pwt),
+            nocondom = wtd.mean(nocondom, weights = pwt),
+            highpartners = wtd.mean(I(numpartners>1), weights = pwt))
+
+# reg_sums<-svyby(~hiv_pos+ipv.viol+ipv.sex+ipv.emot+partner_drinks+nocondom+I(numpartners>1), ~v024, des, FUN = svymean, na.rm=T)
+reg_sums
+
+library(leaflet)
+reg_merge <- tigris::geo_join(saf_regions, reg_sums ,by_sp = "dhs_reg", by_df = "v024.x")
+mapview::mapview(reg_merge, zcol = names(reg_sums)[c(2:7)],
+                 col.regions=hcl.colors(5, palette = "viridis", rev=T))%>%
+  leafem::addStaticLabels(label = reg_merge$NAME_1,
+                  noHide = TRUE,
+                  direction = 'top',
+                  textOnly = TRUE,
+                  textsize = "12px")
+
+pairs(reg_sums[, -1])
+cor(reg_sums[, -1])
+```
+
+## Basic models for IPV \~ drinking + risky sexual behavior
+
+### Nothing to see really
+
+```{r}
+
+# propensm<-svyglm(hiv_pos ~ age1520+age3040+age4050+rural+eduprim+ edusecplus+chilborn+factor(v024), 
+#                 design = des, 
+#                 family = binomial)
+# 
+# summary(propensm)
+# propens<- as.numeric(predict(propensm, type="response"))
+# des$variables$prop<-propens
+
+# fit1<-svyglm(ipv.sex ~ (partner_drinks)*drink_freq, 
+#             des_p,
+#             family=binomial)
+# summary(fit1)
+
+# fit2<-svyglm(ipv.emot ~  (partner_drinks)+numpartners+nocondom, 
+#             des,
+#             family=binomial)
+# summary(fit2)
+
+fitipv<-svyglm(ipv.viol ~  (partner_drinks)+drink_freq+age1520+age3040+age4050+edusecplus+eduprim, 
+            des_d,
+            family=binomial)
+summary(fitipv)
+
+fithiv<-svyglm(hiv_pos ~  (partner_drinks)+ipv.viol+drink_freq+age1520+age3040+age4050+edusecplus+eduprim, 
+            des_h,
+            family=binomial)
+summary(fithiv)
+
+
+fitrisky<-svyglm(nocondom ~  (partner_drinks)+drink_freq+age1520+age3040+age4050+edusecplus+eduprim, 
+            des_p,
+            family=binomial)
+summary(fitrisky)
+
+
+fitrisky2<-svyglm(numpartners ~  (partner_drinks)+drink_freq+age1520+age3040+age4050+edusecplus+eduprim, 
+            des_p,
+            family=poisson)
+summary(fitrisky2)
+
+
+
+library(mediation)
+
+# med.fit<-svyglm(zwbc~zsleep, family=gaussian, des_i)
+# 
+# #of1<-glm(d.event~zsleep, data=nhanes_all, family=binomial, weights = weight/mean(weight, na.rm=T) )
+# out.fit0<-svyglm(d.event~zsleep, family=binomial,des_i )
+# 
+# out.fit<-svyglm(d.event~zsleep+zwbc, family=binomial,des_i )
+# 
+# 
+# med.out<-mediate(med.fit, out.fit, mediator="zwbc", treat="zsleep",boot=T, boot.ci.type = "bca", control.value = 0, treat.value = 1)
+# med.out12<-mediate(med.fit, out.fit, mediator="zwbc", treat="zsleep",boot=T, boot.ci.type = "bca", control.value = 0, treat.value =-1)
+
+
+# mfit<-svyglm(numpartners ~  (partner_drinks)+cage_b+age1520+age3040+age4050+edusecplus+eduprim, 
+#             des_h,
+#             family=poisson)
+# ofit<-svyglm(hiv_pos ~  numpartners+(partner_drinks)+cage_b+age1520+age3040+age4050+edusecplus+eduprim, 
+#             des_h,
+#             family=binomial)
+# med.out<-mediate(mfit, ofit, mediator="numpartners", treat="cage_b",boot=T, boot.ci.type = "bca", control.value = 0, treat.value = 1)
+# 
+# summary(med.out)
+
+```
+
+## Spatial GLMM for IPV
+
+```{r, eval=FALSE}
+library(brms)
+prior<-c(set_prior("normal(0,1)", class="b"))
+
+fit_b<-brm(ipv.viol~(partner_drinks)+hiv_pos+factor(numpartners)+nocondom+scale(age)+edusecplus+eduprim+(1|struct)+car(M=mat, gr = struct, type = "icar"), family=bernoulli,data2=list(mat=mat) , data=saf2_sub,cores=2, chains=2, iter=9000,warmup=5000,thin=2,prior = prior )
+
+```
+
+## INLA GLMM for HIV status
+
+```{r, eval=FALSE}
+library(INLA)
+
+# fit_i<-inla(ipv.viol~(partner_drinks)+hiv_pos+factor(numpartners)+nocondom+scale(age)+edusecplus+eduprim+
+#               f(struct, model = "bym",graph=mat,constr=TRUE ),
+#             family = "binomial",Ntrials = 1,
+#                data=saf2_sub,  num.threads = 2)
+
+#summary(fit_i)
+
+fit_i<-inla(hiv_pos~(partner_drinks)+factor(numpartners)+nocondom+scale(age)+edusecplus+eduprim+rural+ scale(chilborn)+ f(struct,model = "bym2", graph = mat, scale.model = TRUE, constr = TRUE,hyper=list(phi = list(prior = "pc", param = c(0.2, 0.95)), 
+                                                                                       prec = list(prior = "pc.prec", param = c(0.5, 0.025))) ),
+            family = "binomial",Ntrials = 1,
+            control.predictor = list(link=1),
+               data=saf2_sub,
+            num.threads = 2)
+summary(fit_i)
+```
+
+```{r, eval=FALSE}
+thetastar<-mean(saf2_sub$hiv_pos, na.rm=T)#theta*
+inlaprob<- unlist(lapply(fit_i$marginals.fitted.values, function(X){
+   1-inla.pmarginal(thetastar, X)
+}))
+
+hist(inlaprob)
+```
+
+```{r, eval=FALSE}
+
+fit_hiv <-aggregate(cbind(inlaprob, fit_i$summary.fitted.values$mean,fit_i$summary.fitted.values$sd) ~ saf2_sub$struct, FUN=mean, na.rm=T)
+names(fit_hiv ) <- c('struct' ,"exced", 'est', "sd")
+head(fit_hiv)
+
+
+saf2_dhs_psu2<-merge(saf2_dhs_psu, fit_hiv, by_sp="struct", by_df="struct")
+summary(saf2_dhs_psu2$est)
+saf2_dhs_psu2$cv <- saf2_dhs_psu2$sd/ saf2_dhs_psu2$est
+# mapview::mapview(saf2_dhs_psu,zcol="hiv_re")
+ mapview::mapview(saf2_dhs_psu2,zcol=c("est", "cv", "exced"))
+
+```
+
+```{r, eval=FALSE}
+
+ v <- saf2_dhs_psu2 %>% 
+  st_union() %>%
+  st_voronoi() %>%
+  st_collection_extract()
+ 
+ st_crs(v)<-32734
+ plot(v)
+ 
+v_poly <- st_cast(v) %>% 
+            st_intersection(saf2_adm0) %>%
+              st_sf() %>%
+                st_join(saf2_dhs_psu2, join = st_contains)
+
+ mapview::mapview(v_poly,zcol=c("est", "cv", "exced"))
+
+```
+
+
+# Men's analysis
+### IPV recodes
+
+```{r, eval=FALSE}
+sam2$ipv.viol<-ifelse(sam2$d105a==1|sam2$d105a==2|  sam2$d105d==1|sam2$d105d==2| sam2$d105e==1|sam2$d105e==2| sam2$d105f==1|sam2$d105f==2,1,0)
+table(sam2$ipv.viol)
+
+sam2$ipv.sex<-ifelse(sam2$d105h==1|sam2$d105h==2|sam2$d105i==1|sam2$d105i==2|sam2$d105k==1|sam2$d105k==2,1,0)
+table(sam2$ipv.sex)
+
+# sam2$force_sex <- ifelse(sam2$d125==1,1,ifelse(sam2$d125==9, NA, 0))
+# table(sam2$force_sex)
+
+
+sam2$ipv.emot<-ifelse(sam2$d104==1,1,0)
+table(sam2$ipv.emot)
+
+```
+
+## HIV recodes
+
+```{r}
+sam2$hiv_test_ever <- Recode(sam2$mv781, recodes = "1=1;0=0; 9=NA")
+sam2$hiv_test_yr <- Recode(sam2$mv826a, recodes = "0:12=1; 13:95=0")
+
+table(sam2$hiv_test_ever)
+table(sam2$hiv_test_yr)
+
+sam2$hiv_pos <- Recode(sam2$hiv03, recodes = "1:3=1;0=0;4:9=NA")
+table(sam2$hiv_pos)
+
+```
+
+## Alcohol and drugs
+
+
+```{r}
+#sam2$partner_drug <- Recode(sam2$sm1512, recodes = "0=0;1=1;8=NA")
+
+#sam2$partner_drinks<- Recode(sam2$d113, recodes = "0=0;1=1;else=NA")
+
+#sam2$partner_drunk<- Recode(sam2$d114, recodes = "0=0;1:2=1; else = NA")
+
+sam2$ever_drink<-Recode(sam2$sm916, recodes = "0=0;1=1")
+sam2$drink12<-Recode(sam2$sm917, recodes = "0=0;1=1")
+sam2$drink_freq<-Recode(sam2$sm918, recodes = "1='4_5+week';2='3_1_4week';3:4='3_1_3month'; else = 0", as.factor=T)
+sam2$drink_freq <- relevel(sam2$drink_freq, ref = '0')
+
+
+sam2$cage<-ifelse(is.na(sam2$sm920)==T, 0,sam2$sm920)+
+  ifelse(is.na(sam2$sm921)==T, 0,sam2$sm921)+
+ifelse(is.na(sam2$sm922)==T, 0,sam2$sm922)+
+ifelse(is.na(sam2$sm923)==T, 0,sam2$sm923)
+
+sam2$cage_b<-ifelse(sam2$cage>=2, 1, 0)
+```
+
+
+### Other recodes
+
+add risky sex behavior
+
+partners in last year use of condoms + consistency use of alcohol during sex
+
+```{r}
+sam2$age<-sam2$mv012.x
+sam2$age1520<-ifelse(sam2$mv012.x>10&sam2$mv012.x<20,1,0)
+sam2$age3040<-ifelse(sam2$mv012.x>=30&sam2$mv012.x<40,1,0)
+sam2$age4050<-ifelse(sam2$mv012.x>=40&sam2$mv012.x<50,1,0)
+sam2$rural<-ifelse(sam2$mv025.x==2,1,0)
+sam2$eduprim<-ifelse(sam2$mv106.x==1,1,0)
+sam2$edusecplus<-ifelse(sam2$mv106.x!=9&sam2$mv106.x>=2,1,0)
+sam2$hhsize<-sam2$mv136.x
+sam2$chilathome<-sam2$mv202+sam2$mv203
+sam2$chilborn<-sam2$mv201
+sam2$preg<-ifelse(sam2$mv213==1,1,0)
+#sam2$currentbirthintyrs<-sam2$mv222/12
+sam2$currcontramod<-ifelse(sam2$mv313==3,1,0)
+sam2$datint<-((sam2$mv008.x-1)/12)+1900
+sam2$datmarr<-((sam2$mv509-1)/12)+1900
+sam2$marrdur<-sam2$datint-sam2$datmarr
+sam2$wantanotherchild<-ifelse(sam2$mv602!=9&sam2$mv602==1,1,0)
+sam2$unfecund<-ifelse(sam2$mv602==5,1,0)
+sam2$childwn2yrs<-ifelse(sam2$mv605==1,1,0)
+sam2$sterilized<-ifelse(sam2$mv602==4,1,0)
+sam2$intedgtpres<-ifelse(sam2$mv613>(sam2$mv201),1,0)
+#sam2$partneredhigher<-ifelse(sam2$mv106<8&sam2$mv701<8&sam2$mv701>sam2$mv106,1,0)
+#sam2$partneredlower<-ifelse(sam2$mv106<8&sam2$mv701<8&sam2$mv701<sam2$mv106,1,0)
+##sam2$partnerhighstatjob<-ifelse(sam2$mv705==1|sam2$mv705==2|sam2$mv705==3,1,0)
+#sam2$partnerjobclass<-recode(sam2$mv705, recodes="0=0; 1:3=3; 4:5=2; 6:9=1; 96:99=NA")
+#sam2$respjobclass<-recode(sam2$mv717, recodes="0=0; 1:3=3; 4:5=2; 6:9=1; 96:99=NA")
+#sam2$partneragjob<-ifelse(sam2$mv705==4|sam2$mv705==5,1,0)
+#sam2$partnerage<-sam2$mv730
+sam2$respage<-sam2$mv012.x
+#sam2$partolder<-ifelse(sam2$partnerage>sam2$respage+5,1,0)
+#sam2$partyong<-ifelse(sam2$partnerage<sam2$respage-5,1,0)
+#sam2$partnerhigherjob<-ifelse(sam2$partnerjobclass>sam2$respjobclass,1,0)
+#sam2$partnerwork<-ifelse(sam2$v705!=0,1,ifelse(sam2$v705 %in% 98:99==f,0,NA))
+sam2$respwork<-ifelse(sam2$mv716.x!=0,1,ifelse(sam2$mv716.x %in% 98:99==F,0,NA))
+#$partneredu<-ifelse(sam2$mv701>=8, NA, sam2$v701)
+
+# sam2$hithand<-ifelse(sam2$sm620A==1, 1, 0)
+# sam2$hitimp<-ifelse(sam2$sm620A==1, 1, 0)
+
+## risky sex
+sam2$numpartners = car::Recode(sam2$mv766b, recodes="0=0; 1=1;2:94=2;else=NA")
+sam2$nocondom = ifelse(sam2$mv833a==0,1,0)
+```
+
+### survey design
+
+### survey design
+
+```{r}
+sam2$hpwt<- sam2$hiv05/1000000
+sam2$pwt<- sam2$mv005.x/1000000
+#sam2$dpwt<- sam2$d005/1000000
+
+sam2_sub <- sam2%>%
+  mutate(psu = mv012.x, strata=mv022.x, region=mv024.x )%>%
+  filter(complete.cases(mv024.x, pwt, eduprim, edusecplus, drink_freq,numpartners))%>%
+  dplyr::select(mv001,pwt, age, rural, eduprim, edusecplus, hhsize, chilathome, chilborn,   currcontramod, datint, datmarr, marrdur, wantanotherchild, unfecund, childwn2yrs, sterilized, intedgtpres,   respage, respwork,hiv_pos, hiv_test_yr, hiv_test_ever,  strata,psu, region, age1520, age3040, age4050,  numpartners, nocondom, struct, hpwt, ever_drink, drink12, drink_freq, cage, cage_b)
+
+mdes_p <- svydesign(ids = ~psu, strata = ~ strata, weights = ~ pwt, data=sam2_sub, nest=T)
+#des_d <- svydesign(ids = ~ v021.x, strata = ~ v022.x, weights = ~ dpwt, data=sam2_sub[is.na(sam2_sub$dpwt)==F,])
+mdes_h <- svydesign(ids = ~psu, strata = ~ strata, weights = ~hpwt, data=sam2_sub[is.na(sam2_sub$hpwt)==F,], nest=T)
+```
+
+### survey estimates regional level indicators
+
+You can turn on or off layers in the map
+
+```{r, eval=FALSE}
+
+reg_sums<-saf2_sub%>%
+  group_by(v024.x)%>%
+  summarise(ipvviol = wtd.mean(ipv.viol, weights = pwt),
+            ipvemot = wtd.mean(ipv.emot, weights = pwt),
+            ipvsex = wtd.mean(ipv.sex, weights = pwt),
+            partnerdrink = wtd.mean(partner_drinks, weights = pwt),
+            nocondom = wtd.mean(nocondom, weights = pwt),
+            highpartners = wtd.mean(I(numpartners>1), weights = pwt))
+
+# reg_sums<-svyby(~hiv_pos+ipv.viol+ipv.sex+ipv.emot+partner_drinks+nocondom+I(numpartners>1), ~v024, des, FUN = svymean, na.rm=T)
+reg_sums
+
+library(leaflet)
+reg_merge <- tigris::geo_join(saf_regions, reg_sums ,by_sp = "dhs_reg", by_df = "v024")
+mapview::mapview(reg_merge, zcol = names(reg_sums)[c(2:7)],
+                 col.regions=hcl.colors(5, palette = "viridis", rev=T))%>%
+  leafem::addStaticLabels(label = reg_merge$NAME_1,
+                  noHide = TRUE,
+                  direction = 'top',
+                  textOnly = TRUE,
+                  textsize = "12px")
+
+pairs(reg_sums[, -1])
+cor(reg_sums[, -1])
+```
+
+## Basic models for IPV \~ drinking + risky sexual behavior
+
+### Nothing to see really
+
+```{r}
+
+
+
+fithiv<-svyglm(hiv_pos ~  drink_freq+age1520+age3040+age4050+edusecplus+eduprim+factor(region), 
+            mdes_h,
+            family=binomial)
+summary(fithiv)
+
+
+fitrisky<-svyglm(nocondom ~  drink_freq+age1520+age3040+age4050+edusecplus+eduprim+factor(region), 
+            mdes_p,
+            family=binomial)
+summary(fitrisky)
+
+
+fitrisky2<-svyglm(numpartners ~  drink_freq+age1520+age3040+age4050+edusecplus+eduprim+factor(region), 
+            mdes_p,
+            family=poisson)
+summary(fitrisky2)
+
+```
+## INLA GLMM for HIV status
+
+```{r, eval=FALSE}
+library(INLA)
+
+# fit_i<-inla(ipv.viol~(partner_drinks)+hiv_pos+factor(numpartners)+nocondom+scale(age)+edusecplus+eduprim+
+#               f(struct, model = "bym",graph=mat,constr=TRUE ),
+#             family = "binomial",Ntrials = 1,
+#                data=saf2_sub,  num.threads = 2)
+
+#summary(fit_i)
+
+fit_i<-inla(hiv_pos~cage_b+factor(numpartners)+nocondom+scale(age)+edusecplus+eduprim+rural+ scale(chilborn)+ f(struct,model = "bym2", graph = mat, scale.model = TRUE, constr = TRUE,hyper=list(phi = list(prior = "pc", param = c(0.2, 0.95)), 
+                                                                                       prec = list(prior = "pc.prec", param = c(0.5, 0.025))) ),
+            family = "binomial",Ntrials = 1,
+            control.predictor = list(link=1),
+               data=sam2_sub,
+            num.threads = 2)
+summary(fit_i)
+```
+
+```{r, eval=FALSE}
+thetastar<-mean(sam2_sub$hiv_pos, na.rm=T)#theta*
+inlaprob<- unlist(lapply(fit_i$marginals.fitted.values, function(X){
+   1-inla.pmarginal(thetastar, X)
+}))
+
+hist(inlaprob)
+```
+
+```{r, eval=FALSE}
+
+fit_hiv <-aggregate(cbind(inlaprob, fit_i$summary.fitted.values$mean,fit_i$summary.fitted.values$sd) ~ sam2_sub$struct, FUN=mean, na.rm=T)
+names(fit_hiv ) <- c('struct' ,"exced", 'est', "sd")
+head(fit_hiv)
+
+
+saf2_dhs_psu2<-merge(saf2_dhs_psu, fit_hiv, by_sp="struct", by_df="struct")
+summary(saf2_dhs_psu2$est)
+saf2_dhs_psu2$cv <- saf2_dhs_psu2$sd/ saf2_dhs_psu2$est
+# mapview::mapview(saf2_dhs_psu,zcol="hiv_re")
+ mapview::mapview(saf2_dhs_psu2,zcol=c("est", "cv", "exced"))
+
+```
+
+```{r, eval=FALSE}
+
+ v <- saf2_dhs_psu2 %>% 
+  st_union() %>%
+  st_voronoi() %>%
+  st_collection_extract()
+ 
+ st_crs(v)<-32734
+ plot(v)
+ 
+v_poly <- st_cast(v) %>% 
+            st_intersection(saf2_adm0) %>%
+              st_sf() %>%
+                st_join(saf2_dhs_psu2, join = st_contains)
+
+ mapview::mapview(v_poly,zcol=c("est", "cv", "exced"))
+
+```
+
+### Combine data
+## Need to merge women to men
+
+```{r}
+sam2_sub$v001<- sam2_sub$mv001
+
+nams<-names(sam2_sub)[which(names(sam2_sub)%in%names(saf2_sub))]
+msub<-sam2_sub[, nams]; msub$sex<-"male"
+fsub<-saf2_sub[,nams]; fsub$sex<-"female"
+
+adat<-rbind(msub, fsub)
+saveRDS(adat, file = "../data/m_f_merged.rds")
+```
+
+
