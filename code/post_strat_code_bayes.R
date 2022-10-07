@@ -7,7 +7,7 @@ library(mapview)
 
 ## Read in dhs points
 
-ethpoly <- st_read("../data/ZA_2016_DHS_02262021_2058_24890/ZAGE71FL/ZAGE71FL.shp")
+ethpoly <- st_read("./data/ZA_2016_DHS_02262021_2058_24890/ZAGE71FL/ZAGE71FL.shp")
 
 ethpoly$struct <- 1:dim(ethpoly)[1]
 
@@ -73,12 +73,12 @@ dhs2000m$chil_cut <- cut(dhs2000m$chilborn, breaks = c(0,1, 2,4, 12), include.lo
 
 dhs2000m$eth2<-ifelse(dhs2000m$eth%in%c("asian", "white"), "other", dhs2000m$eth)
 
-modf<-lmer(hiv_pos ~ 1+(1|IPUM2016/agegrp)+(1|agegrp)+eduprim+urban+chil_cut, weights = hpwt,  data = dhs2000m)
-mods<- glm(hiv_pos ~ 1+eduprim+urban+chil_cut, weights = hpwt, family = binomial, data = dhs2000m)
-summary(mod)
+# modf<-lmer(hiv_pos ~ 1+(1|IPUM2016/agegrp)+(1|agegrp)+eduprim+urban+chil_cut, weights = hpwt,  data = dhs2000m)
+# mods<- glm(hiv_pos ~ 1+eduprim+urban+chil_cut, weights = hpwt, family = binomial, data = dhs2000m)
+# summary(mod)
 
-test<-glm(nocondom ~ agegrp+eth2+edusecplus+urban+chil_cut,family=binomial, data=dhs2000m)
-vif(test)
+# test<-glm(nocondom ~ agegrp+eth2+edusecplus+urban+chil_cut,family=binomial, data=dhs2000m)
+# vif(test)
 
 
 library(rstanarm)
@@ -107,20 +107,41 @@ mod3<-stan_glmer(I(drink_freq%in%c("3_1_4week",   "4_5+week")) ~ 1+(1|IPUM2016/a
 summary(mod3,pars = c("beta"), digits = 3)
 summary(bayes_R2(mod3, re.form = ~(1|IPUM2016/agegrp)+(1|agegrp)))
 
+summary(mod3, pars = c("beta", "Sigma[agegrp:(Intercept),(Intercept)]",
+                       "Sigma[IPUM2016:(Intercept),(Intercept)]",
+                       "Sigma[agegrp:IPUM2016:(Intercept),(Intercept)]"
+),
+probs = c(0.025, 0.975),
+digits = 3)
+
+
 mod4<- stan_glmer(nocondom ~ 1+(1|IPUM2016/agegrp)+(1|agegrp)+eth2+edusecplus+urban+chil_cut, weights = pwt, family = binomial, data = dhs2000m, chains =3, cores = 3)
 summary(mod4,pars = c("beta"), digits = 3)
+summary(mod4, pars = c("beta", "Sigma[agegrp:(Intercept),(Intercept)]",
+                       "Sigma[IPUM2016:(Intercept),(Intercept)]",
+                       "Sigma[agegrp:IPUM2016:(Intercept),(Intercept)]"
+),
+probs = c(0.025, 0.975),
+digits = 3)
+
 summary(bayes_R2(mod4, re.form = ~(1|IPUM2016/agegrp)+(1|agegrp)))
 
+# 
+# summary(bayes_R2(moda))
+# summary(bayes_R2(mod2))
+# summary(bayes_R2(mod3))
+# summary(bayes_R2(mod4))
 
-summary(bayes_R2(moda))
-summary(bayes_R2(mod2))
-summary(bayes_R2(mod3))
-summary(bayes_R2(mod4))
+# summary(loo_R2(moda))
+# summary(loo_R2(mod2))
+# summary(loo_R2(mod3))
+# summary(loo_R2(mod4))
 
-summary(loo_R2(moda))
-summary(loo_R2(mod2))
-summary(loo_R2(mod3))
-summary(loo_R2(mod4))
+
+## model tables
+
+mods <- list(moda, mod2, mod3, mod4)
+modelsummary::modelsummary(mods, statistic = c("conf.int"))
 
 #### do partner drink model ####
 
@@ -212,10 +233,10 @@ wts<-nb2listw(nbs, style="W")
 
 
 
-preddat$hivg <- localmoran(preddat$ratehiv, listw=wts)[, 4]
-preddat$drinkg <- localmoran(preddat$ratecage, listw=wts)[, 4]
-preddat$ipvg <- localmoran(preddat$rateipv, listw=wts)[, 4]
-preddat$condg <- localmoran(preddat$ratecond, listw=wts)[, 4]
+preddat$hivg <- localG(preddat$ratehiv, listw=wts)
+preddat$drinkg <- localG(preddat$ratecage, listw=wts)
+preddat$ipvg <- localG(preddat$rateipv, listw=wts)
+preddat$condg <- localG(preddat$ratecond, listw=wts)
 #preddat$hivg <- localG(preddat$ratehiv, listw=wts)
 
 names(preddat)
@@ -246,14 +267,14 @@ ggplot(Df)+
         ylab("R2 of classification")
 out<- kmeans(pd2[, 12:15], centers = 4, nstart = 10, iter.max = 150)
 out
-preddat$cl <-kmeans(pd2[, 12:15], centers = 4, nstart = 3, iter.max = 150)$cluster
+preddat$cl <-kmeans(pd2[, 12:15], centers = 2, nstart = 3, iter.max = 150)$cluster
 
-pdm <- st_intersection(preddat,eth_adm1 )
+#pdm <- st_intersection(preddat,eth_adm1 )
 
-prop.table(table(pdm$NAME_1, pdm$cl), margin = 2)
+#prop.table(table(pdm$NAME_1, pdm$cl), margin = 2)
 
 #mapview(preddat, zcol ="cl")
 
-sf::st_write(pdm,dsn =  "./data/poststrat_cl.shp", delete_dsn =T)
+sf::st_write(preddat,dsn =  "./data/poststrat_cl.shp", delete_dsn =T)
 
 #rm(list=ls()); gc()        

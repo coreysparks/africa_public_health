@@ -1,0 +1,262 @@
+---
+title: "Untitled"
+output: html_document
+date: '2022-07-07'
+---
+
+```{r }
+# post stratification for outcome prevalence
+
+
+library(sf)
+library(mapview)
+
+
+## Read in dhs points
+
+ethpoly <- st_read( here::here("data/ZA_2016_DHS_02262021_2058_24890/ZAGE71FL", "ZAGE71FL.shp"))
+
+ethpoly$struct <- 1:dim(ethpoly)[1]
+
+#plot(ethpoly["struct"])
+
+
+
+
+## Read in dhs sample locations and ADM 2 regions.
+
+# The adm2 shapefile can be found in the [Diva GIS international data repository](https://www.diva-gis.org/gdata), or from the [IPUMS International site](https://international.ipums.org/international/gis_harmonized_2nd.shtml) below I use the ADM2 level of administrative geography. 
+# 
+# These locations are not identified in the DHS, but by performing a spatial intersection, we can merge the DHS survey locations to the ADM 2 units
+# 
+
+
+
+eth_dots<-st_read( paste(here::here(),"/data/ZA_2016_DHS_02262021_2058_24890/ZAGE71FL/ZAGE71FL.shp", sep=""))
+#eth_dots <- eth_dots[eth_dots$LATNUM>0,]
+
+eth_adm1<-st_read(paste(here::here(),"/data/ZAF_adm/ZAF_adm1.shp", sep=""))
+eth_adm1<- st_transform(eth_adm1, crs = 32734)
+eth_adm2<-st_read(paste(here::here(),"/data/geo3_za2016/geo3_za2016.shp", sep=""))
+eth_adm2$struct <- 1:dim(eth_adm2)[1]
+
+# eth_adm2<-st_read("~/OneDrive - University of Texas at San Antonio/projects/AFRICA_ph/data/ZAF_adm/ZAF_adm2.shp")
+# eth_adm2$struct <- 1:dim(eth_adm2)[1]
+
+
+
+
+
+#merge dots to administrative data
+eth_dots2000<-st_intersection(eth_dots, eth_adm2)
+#eth_dots2000
+names(eth_dots2000)
+#mapview(eth_dots2000["IPUM2016"])+mapview(eth_adm2["IPUM2016"])
+
+
+
+library(haven)
+dhs2000<-readRDS(file =paste(here::here(),"/data/saf_women.rds", sep=""))
+#dhs2000<-zap_labels(dhs2000)
+
+
+
+## Merge survey data to sample locations
+
+
+dhs2000m<-merge(dhs2000, eth_dots2000, by.x="v001", by.y="DHSCLUST", all.y=T)
+
+
+dhs2000m$ipvany<-ifelse(dhs2000m$ipv.sex==1|dhs2000m$ipv.vio==1|dhs2000m$ipv.emot==1, 1, 0)
+dhs2000m$age_cat <- cut(dhs2000m$age, breaks = 3)
+dhs2000m$eth2<-ifelse(dhs2000m$eth%in%c("asian", "white"), "other", dhs2000m$eth)
+
+library(lme4)
+dhs2000m$agegrp <- as.numeric(cut(dhs2000m$age,
+                                  breaks = c(15,19,24, 29, 34, 39, 44, 49)))
+
+
+dhs2000m$urban <- ifelse(dhs2000m$rural ==1 , 0, 1)
+dhs2000m$chil_cut <- cut(dhs2000m$chilborn, breaks = c(0,1, 2,4, 12), include.lowest = T)
+
+library(tableone)
+library(survey)
+options(survey.lonely.psu = "adjust")
+
+library(gtsummary)
+library(srvyr)
+
+```
+# Notes on recodes
+agegrp 1 = 15-19
+2 = 19-24
+3=24-29
+4 = 29-34
+5=34-39
+6=39-44
+7=44-49
+don't report Unknown age
+
+edusecplus is >= secondary education, compared to those without secondary education
+
+urban is compared to rural
+
+For reporting, just report the %'s not the n's for each cell
+
+
+
+# risky sex
+```{r}
+dhs2000m%>%
+  filter(complete.cases(pwt, psu, strata, agegrp, eth2))%>%
+  as_survey_design( ids = psu, 
+                    strata =strata,
+                    weights =pwt, nest=T)%>%
+  select(nocondom, agegrp,eth2, edusecplus, urban, chil_cut)%>%
+  tbl_svysummary(by = c(nocondom), percent = "row",
+                 statistic = list(all_categorical() ~ "{n} ({p}%)"))%>%
+  add_p()
+
+```
+
+# alcohol use
+```{r}
+dhs2000m%>%
+  filter(complete.cases(pwt, psu, strata,agegrp, eth2))%>%
+  mutate(drink = ifelse(drink_freq!="0", 1, 0))%>%
+  as_survey_design( ids = psu, 
+                    strata =strata,
+                    weights =pwt, nest=T)%>%
+  select(drink, agegrp,eth2, edusecplus, urban, chil_cut)%>%
+  tbl_svysummary(by = drink, percent = "row",
+                 statistic = list(all_categorical() ~ "{n} ({p}%)"))%>%
+  add_p()
+```
+
+# hiv positive
+```{r}
+
+dhs2000m%>%
+  filter(complete.cases(hpwt, psu, strata,agegrp, eth2))%>%
+  as_survey_design( ids = psu, 
+                    strata =strata,
+                    weights =hpwt, nest=T)%>%
+  select(hiv_pos, agegrp,eth2, edusecplus, urban, chil_cut)%>%
+  tbl_svysummary(by = c(hiv_pos), percent = "row",
+                 statistic = list(all_categorical() ~ "{n} ({p}%)"))%>%
+  add_p()
+
+```
+
+# IPV
+
+```{r}
+dhs2000m%>%
+  filter(complete.cases(dpwt, psu, strata,agegrp, eth2))%>%
+  as_survey_design( ids = psu, 
+                    strata =strata,
+                    weights =dpwt, nest=T)%>%
+  select(ipvany, agegrp,eth, edusecplus, urban, chil_cut)%>%
+  tbl_svysummary(by = c(ipvany), percent = "row",
+                 statistic = list(all_categorical() ~ "{n} ({p}%)"))%>%
+  add_p()
+
+
+```
+
+
+```{r}
+library(tmap); library(tmaptools)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+pstrat<- st_read("../data/poststrat_cl.shp")
+ps1<-pstrat
+
+ps1%>%
+  group_by(NAME_1)%>%
+  summarise(phiv = mean(ratehiv),
+            pipv=mean(rateipv),
+            pdrink = mean(ratecage),
+            psex= mean(ratecond))%>%
+  pivot_longer(cols = c(phiv, pipv, pdrink, psex))%>%
+  ggplot()+
+  geom_bar(aes(x = name, fill=NAME_1, y = value),
+           stat="identity",
+           position = "dodge")+
+  scale_fill_brewer(palette = "Paired")+
+  theme_bw()
+
+```
+
+```{r}
+ps1%>%
+  group_by(cl)%>%
+  summarise(phiv = mean(ratehiv), pipv=mean(rateipv), pdrink = mean(ratecage), psex= mean(ratecond))%>%
+  pivot_longer(cols = c(phiv, pipv, pdrink, psex))%>%
+  ggplot()+
+  geom_bar(aes(x = name, fill=factor(cl), y = value),
+           stat="identity",
+           position = "dodge")+
+  scale_fill_brewer(palette = "Paired")+
+  theme_bw()
+```
+
+```{r}
+ps1%>%
+  group_by(cl)%>%
+  summarise(phiv = mean(hivg), pipv=mean(ipvg), pdrink = mean(drinkg), psex= mean(condg))%>%
+  pivot_longer(cols = c(phiv, pipv, pdrink, psex))%>%
+  ggplot()+
+  geom_bar(aes(x = name, fill=factor(cl), y = value),
+           stat="identity",
+           position = "dodge")+
+  scale_fill_brewer(palette = "Paired")+
+  theme_bw()
+```
+
+```{r}
+
+ps1%>%
+  group_by(cl)%>%
+  summarise(phiv = mean(hivg), pipv=mean(ipvg), pdrink = mean(drinkg), psex= mean(condg))
+
+```
+
+```{r}
+library(tmap)
+saf2_adm1<- st_read("C:/Users/ozd504/OneDrive - University of Texas at San Antonio/projects/AFRICA_ph//data/ZAF_adm/ZAF_adm1.shp")
+
+saf2_adm1<- st_transform(saf2_adm1, crs = 32734 )
+
+# saf2_adm1<-saf2_adm1%>%
+#   filter(ID_2!=313)
+
+tmap_mode("plot")
+f4<-tm_basemap("Esri.WorldGrayCanvas")+ 
+  tm_shape(pstrat, is.master = T)+
+  #tm_borders(col = "grey20", alpha = .4, lty = 3 )+
+  tm_polygons("cl", title="Multivariate Cluster")+
+  # tm_shape(saf2_dhs_psu)+
+  # tm_dots(size =.05)+
+  tm_format(format = "World", legend.outside=T)+
+  tm_shape(saf2_adm1)+
+  tm_borders(col ="black",lwd=2, lty=1)+
+  tm_scale_bar(position=c("left", "top"))+
+  tm_compass(position =c("left", "top"))
+
+f4
+
+# tm_basemap("Esri.WorldGrayCanvas")+ 
+#   tm_shape(pstrat, is.master = T)+
+#   #tm_borders(col = "grey20", alpha = .4, lty = 3 )+
+#   tm_polygons("pam", title="Multivariate Cluster")+
+#   # tm_shape(saf2_dhs_psu)+
+#   # tm_dots(size =.05)+
+#   tm_format(format = "World", legend.outside=T)+
+#   tm_shape(saf2_adm1)+
+#   tm_borders(col ="black",lwd=2, lty=1)+
+#   tm_scale_bar(position=c("left", "top"))+
+#   tm_compass(position =c("left", "top"))
+
+```

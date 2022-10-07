@@ -18,25 +18,25 @@ library(car)
 
 
 # individual recode
-saf<-read_dta("./data/ZA_2016_DHS_02252021_1635_24890/ZAIR71DT/ZAIR71FL.DTA")
+saf<-read_dta("C:/Users/ozd504/OneDrive - University of Texas at San Antonio/projects/AFRICA_ph//data/ZA_2016_DHS_02252021_1635_24890/ZAIR71DT/ZAIR71FL.DTA")
 saf<-zap_labels(saf)
 
 # mens recode
-sam<-read_dta("./data/ZA_2016_DHS_02252021_1635_24890/ZAMR71DT/ZAMR71FL.DTA")
+sam<-read_dta("C:/Users/ozd504/OneDrive - University of Texas at San Antonio/projects/AFRICA_ph//data/ZA_2016_DHS_02252021_1635_24890/ZAMR71DT/ZAMR71FL.DTA")
 sam<-zap_labels(sam)
 
 
 #women's health survey
-saf_wh<-read_dta("./data/ZA_2016_DHS_02252021_1635_24890/ZAAH71DT/ZAAHW71FL.DTA")
+saf_wh<-read_dta("C:/Users/ozd504/OneDrive - University of Texas at San Antonio/projects/AFRICA_ph//data/ZA_2016_DHS_02252021_1635_24890/ZAAH71DT/ZAAHW71FL.DTA")
 saf_wh<-zap_labels(saf_wh)
 
 
 # Men's health survey
-saf_mh<-read_dta("./data/ZA_2016_DHS_02252021_1635_24890/ZAAH71DT/ZAAHM71FL.DTA")
+saf_mh<-read_dta("C:/Users/ozd504/OneDrive - University of Texas at San Antonio/projects/AFRICA_ph//data/ZA_2016_DHS_02252021_1635_24890/ZAAH71DT/ZAAHM71FL.DTA")
 saf_mh<-zap_labels(saf_mh)
 
 ##HIV data
-safhiv<-read_dta("./data/ZA_2016_DHS_03182021_1437_24890/ZAAR71DT/ZAAR71FL.DTA")
+safhiv<-read_dta("C:/Users/ozd504/OneDrive - University of Texas at San Antonio/projects/AFRICA_ph//data/ZA_2016_DHS_03182021_1437_24890/ZAAR71DT/ZAAR71FL.DTA")
 safhiv<-zap_labels(safhiv)
 
 
@@ -61,24 +61,24 @@ sam2<-merge(sam2, safhiv, by.x=c("mv001", "mv002", "mv003"), by.y = c("hivclust"
 
 
 #polygons
-saf2_adm2<- st_read("./data/ZAF_adm/ZAF_adm2.shp")
+saf2_adm2<- st_read("C:/Users/ozd504/OneDrive - University of Texas at San Antonio/projects/AFRICA_ph/data/ZAF_adm/ZAF_adm2.shp")
 
 saf2_adm2<- st_transform(saf2_adm2, crs = 32734 )
 
-saf2_adm1<- st_read("./data/ZAF_adm/ZAF_adm1.shp")
+saf2_adm1<- st_read("C:/Users/ozd504/OneDrive - University of Texas at San Antonio/projects/AFRICA_ph//data/ZAF_adm/ZAF_adm1.shp")
 
 saf2_adm1<- st_transform(saf2_adm1, crs = 32734 )
 
-saf2_adm0<- st_read("./data/ZAF_adm/ZAF_adm0.shp")
+saf2_adm0<- st_read("C:/Users/ozd504/OneDrive - University of Texas at San Antonio/projects/AFRICA_ph//data/ZAF_adm/ZAF_adm0.shp")
 
 saf2_adm0<- st_transform(saf2_adm0, crs = 32734 )
 
 #psu locations
-saf2_dhs_psu<- st_read("./data/ZA_2016_DHS_02262021_2058_24890/ZAGE71FL/ZAGE71FL.shp")
+saf2_dhs_psu<- st_read("C:/Users/ozd504/OneDrive - University of Texas at San Antonio/projects/AFRICA_ph//data/ZA_2016_DHS_02262021_2058_24890/ZAGE71FL/ZAGE71FL.shp")
 
 saf2_dhs_psu<- st_transform(saf2_dhs_psu, crs =32734 )
 
-saf_regions<- st_read("./data/ZAF_adm/ZAF_adm1.shp")
+saf_regions<- st_read("C:/Users/ozd504/OneDrive - University of Texas at San Antonio/projects/AFRICA_ph//data/ZAF_adm/ZAF_adm1.shp")
 saf_regions <- saf_regions%>%
   filter(NAME_1!= "Western Cape (isolated islands)")
 
@@ -120,7 +120,7 @@ library(tmap); library(tmaptools)
 library(dplyr)
 library(tidyr)
 library(ggplot2)
-pstrat<- st_read("./data/poststrat_cl_noisl.dbf.gpkg")
+pstrat<- st_read("C:/Users/ozd504/OneDrive - University of Texas at San Antonio/projects/AFRICA_ph//data/poststrat_cl_noisl.dbf.gpkg")
 ps1<-pstrat
 st_geometry(ps1)<-NULL
 # pstrat<-pstrat%>%
@@ -181,7 +181,7 @@ f2<-tm_basemap("Esri.WorldGrayCanvas")+
 f3<-tm_basemap("Esri.WorldGrayCanvas")+ 
   tm_shape(pstrat, is.master = T)+
   #tm_borders(col = "grey20", alpha = .4, lty = 3 )+
-  tm_polygons("ratecage", title="% with Problem\nDrinking", palette="Blues", style="jenks", n=5,legend.hist=T )+
+  tm_polygons("ratecage", title="% with Alcohol\nUse", palette="Blues", style="jenks", n=5,legend.hist=T )+
   # tm_shape(saf2_dhs_psu)+
   # tm_dots(size =.05)+
   tm_format(format = "World", legend.outside=T)+
@@ -210,13 +210,13 @@ f4<-tm_basemap("Esri.WorldGrayCanvas")+
 
 f2_all<-tmap_arrange(f1, f2, f3, f4, ncol =2)
 
-tmap_save(f2_all, filename = "./images/figure2.png" )
+tmap_save(f2_all, filename = "../images/figure2.png" )
 
 
 # figure 3
 
 library(tmap); library(tmaptools)
-pstrat<- st_read("./data/poststrat_cl_noisl.dbf.gpkg")
+pstrat<- st_read("C:/Users/ozd504/OneDrive - University of Texas at San Antonio/projects/AFRICA_ph//data/poststrat_cl_noisl.dbf.gpkg")
 # pstrat<-pstrat%>%
 #    filter(MUNI2016!="1991011")
 
@@ -313,7 +313,7 @@ f2<-tm_basemap("Esri.WorldGrayCanvas")+
 f3<-tm_basemap("Esri.WorldGrayCanvas")+ 
   tm_shape(pstrat, is.master = T)+
   #tm_borders(col = "grey20", alpha = .4, lty = 3 )+
-  tm_polygons("drinkg", title="Local Problem\nDrinking Cluster")+
+  tm_polygons("drinkg", title="Local Alcohol\nUse Cluster")+
   # tm_shape(saf2_dhs_psu)+
   # tm_dots(size =.05)+
   tm_format(format = "World", legend.outside=T)+
@@ -342,7 +342,7 @@ f4<-tm_basemap("Esri.WorldGrayCanvas")+
 
 f2_all<-tmap_arrange(f1, f2, f3, f4, ncol =2)
 
-tmap_save(f2_all, filename = "./images/figure3.png" )
+tmap_save(f2_all, filename = "../images/figure3.png" )
 
 
 ## figure 4
